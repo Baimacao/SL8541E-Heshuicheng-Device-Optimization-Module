@@ -51,7 +51,6 @@ resetprop net.tcp.default_init_rwnd 256
 
 # ═══════════════════════════════════════
 # 接管 tcpboost（内核层 sysctl）
-#   属性层改不了 /proc/sys，必须 echo
 # ═══════════════════════════════════════
 echo 8388608 > /proc/sys/net/core/rmem_max 2>/dev/null
 echo 8388608 > /proc/sys/net/core/wmem_max 2>/dev/null
@@ -65,12 +64,14 @@ echo 1 > /proc/sys/net/ipv4/tcp_tw_reuse 2>/dev/null
 echo 1 > /proc/sys/net/ipv4/tcp_low_latency 2>/dev/null
 
 # ═══════════════════════════════════════
-# 音频低抖动（swappiness 原值 150 异常高）
+# 内核参数
+#   swappiness 保持原厂 150
+#   I/O 调度改 noop（闪存最佳）
 # ═══════════════════════════════════════
-echo 10 > /proc/sys/vm/swappiness 2>/dev/null
+echo 150 > /proc/sys/vm/swappiness 2>/dev/null
 echo noop > /sys/block/mmcblk0/queue/scheduler 2>/dev/null
 
-echo "[$(date)] TCP: rmem=$(cat /proc/sys/net/core/rmem_max) cc=$(cat /proc/sys/net/ipv4/tcp_congestion_control) | swappiness=$(cat /proc/sys/vm/swappiness) io=$(cat /sys/block/mmcblk0/queue/scheduler)" >> "$LOG"
+echo "[$(date)] 内存: swappiness=$(cat /proc/sys/vm/swappiness) | TCP: rmem=$(cat /proc/sys/net/core/rmem_max) cc=$(cat /proc/sys/net/ipv4/tcp_congestion_control)" >> "$LOG"
 
 # ═══════════════════════════════════════
 # Settings 辅助
@@ -86,7 +87,7 @@ xml_read() {
 cmd_read() {
     out=$("$@" 2>/dev/null)
     case "$out" in
-        *"Failure"*|*"cmd:"*|*"Error"*|"null"|"") echo "" ;;
+        *"Failure"*|*"cmd:"*|*"Error"*|*"null"|"") echo "" ;;
         *) echo "$out" ;;
     esac
 }

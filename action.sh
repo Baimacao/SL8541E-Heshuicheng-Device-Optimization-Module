@@ -4,20 +4,6 @@ MODDIR="${MODDIR:-${0%/*}}"
 [ ! -d "$MODDIR" ] && MODDIR="/data/adb/modules/SL8541E_Config_Fix"
 
 # ═══════════════════════════════════════
-# 定位 BusyBox（APatch 自带，提供 awk）
-# ═══════════════════════════════════════
-BUSYBOX=""
-for p in /data/adb/ap/bin/busybox /data/adb/magisk/busybox /system/bin/busybox /system/xbin/busybox; do
-    [ -x "$p" ] && { BUSYBOX="$p"; break; }
-done
-
-if [ -n "$BUSYBOX" ]; then
-    AWK="$BUSYBOX awk"
-else
-    AWK="awk"
-fi
-
-# ═══════════════════════════════════════
 # 震动反馈
 # ═══════════════════════════════════════
 vibrate() {
@@ -68,38 +54,28 @@ xml_get() {
 sget() {
     out=$(settings get global "$1" 2>/dev/null)
     case "$out" in
-        *"Failure"*|*"cmd:"*|*"Error"*|"null"|"") ;;
+        *"Failure"*|*"cmd:"*|*"Error"*|*"null"|"") ;;
         *) echo "$out"; return ;;
     esac
     xml_get "$1"
 }
 
-# ═══════════════════════════════════════
-# 动画检测（纯 shell 浮点近似比较，无 awk）
-# ═══════════════════════════════════════
+# 动画检测（纯 shell 整数近似比较）
 chk_anim() {
     key="$1"; exp="$2"
     cur=$(sget "$key")
     [ -z "$cur" ] && { echo "读不到值 ✗"; return; }
-
-    # 精确字符串匹配
     [ "$cur" = "$exp" ] && { echo "已生效 ✓"; return; }
 
-    # 数值近似：乘以 1000 转整数比较，容差 1 (即 0.001)
     cur_i=$(echo "$cur" | sed 's/\.//')
     exp_i=$(echo "$exp" | sed 's/\.//')
-    # 补齐到相同位数
     while [ ${#cur_i} -lt ${#exp_i} ]; do cur_i="${cur_i}0"; done
     while [ ${#exp_i} -lt ${#cur_i} ]; do exp_i="${exp_i}0"; done
 
     diff=$((cur_i - exp_i))
     [ $diff -lt 0 ] && diff=$((0 - diff))
 
-    if [ $diff -le 1 ]; then
-        echo "已生效 ✓"
-    else
-        echo "未生效 ✗ (当前 $cur)"
-    fi
+    [ $diff -le 1 ] && echo "已生效 ✓" || echo "未生效 ✗ (当前 $cur)"
 }
 
 DEV=$(sget development_settings_enabled)
@@ -140,30 +116,20 @@ tr_status() {
         *) echo "$1" ;;
     esac
 }
-
-# 格式化电压（纯 shell 整数运算）
 fmt_voltage() {
-    v="$1"
-    [ -z "$v" ] && { echo "未知"; return; }
+    v="$1"; [ -z "$v" ] && { echo "未知"; return; }
     if [ "$v" -gt 100000 ] 2>/dev/null; then
-        # 微伏 -> 伏特
-        volt=$((v / 1000000))
-        frac=$(((v % 1000000) / 10000))
+        volt=$((v / 1000000)); frac=$(((v % 1000000) / 10000))
         printf "%d.%02d V" "$volt" "$frac"
     elif [ "$v" -gt 1000 ] 2>/dev/null; then
-        # 毫伏 -> 伏特
-        volt=$((v / 1000))
-        frac=$(((v % 1000) / 10))
+        volt=$((v / 1000)); frac=$(((v % 1000) / 10))
         printf "%d.%02d V" "$volt" "$frac"
     else
         echo "${v} mV"
     fi
 }
-
-# 格式化电流（纯 shell 整数运算）
 fmt_current() {
-    c="$1"
-    [ -z "$c" ] && { echo "未知"; return; }
+    c="$1"; [ -z "$c" ] && { echo "未知"; return; }
     if [ "$c" -lt 0 ] 2>/dev/null; then
         d="放电 "; c=$((0 - c))
     else
@@ -175,13 +141,9 @@ fmt_current() {
         printf "%s%d mA" "$d" "$c"
     fi
 }
-
-# 格式化温度（纯 shell 整数运算）
 fmt_temp() {
-    t="$1"
-    [ -z "$t" ] && { echo "未知"; return; }
-    deg=$((t / 10))
-    frac=$((t % 10))
+    t="$1"; [ -z "$t" ] && { echo "未知"; return; }
+    deg=$((t / 10)); frac=$((t % 10))
     printf "%d.%d °C" "$deg" "$frac"
 }
 
@@ -200,7 +162,8 @@ WARN=""
 # 输出
 # ═══════════════════════════════════════
 echo "【优化模块 · 状态检测】"
-echo "大肥鱼正在扫描…… 咕噜咕噜"
+echo "🐟 大肥鱼上线……咕噜咕噜"
+echo "   (˘ω˘) 女仆装已穿戴，开始扫描"
 echo "──────────────────"
 echo "5G假图标关闭：   $(chk persist.sys.5g false)"
 echo "状态栏4G：       $(chk persist.sys.logo 4G)"
@@ -233,7 +196,7 @@ echo "  wmem_max：     $(cat /proc/sys/net/core/wmem_max 2>/dev/null)"
 echo "  拥塞算法：     $(cat /proc/sys/net/ipv4/tcp_congestion_control 2>/dev/null)"
 echo "  rwnd 属性：    $(chk net.tcp.default_init_rwnd 256)"
 echo "──────────────────"
-echo "音频/内核低抖动："
+echo "音频/内核："
 echo "  重采样质量：   $(chk af.resampler.quality 4)"
 echo "  swappiness：   $(cat /proc/sys/vm/swappiness 2>/dev/null)"
 IO_RAW=$(cat /sys/block/mmcblk0/queue/scheduler 2>/dev/null)
@@ -241,6 +204,16 @@ IO_SEL=$(echo "$IO_RAW" | grep -o '\[[a-z]*\]' | tr -d '[]')
 IO_SHOW=$(echo "$IO_RAW" | sed 's/\[/【/;s/\]/】/')
 echo "  I/O 调度：     $IO_SHOW"
 [ "$IO_SEL" = "noop" ] && echo "  I/O 生效：     已生效 ✓" || echo "  I/O 生效：     未生效 ✗ (当前 $IO_SEL)"
+
+# ─── 物理内存 ───
+MEM_TOTAL=$(grep MemTotal /proc/meminfo 2>/dev/null | tr -s ' ' | cut -d' ' -f2)
+MEM_AVAIL=$(grep MemAvailable /proc/meminfo 2>/dev/null | tr -s ' ' | cut -d' ' -f2)
+if [ -n "$MEM_TOTAL" ] && [ -n "$MEM_AVAIL" ]; then
+    TOT_MB=$((MEM_TOTAL / 1024))
+    AVAIL_MB=$((MEM_AVAIL / 1024))
+    echo "  物理内存：    ${AVAIL_MB}MB / ${TOT_MB}MB 可用"
+fi
+
 echo "──────────────────"
 echo "Wear OS 库："
 WEAR_OK=1
@@ -250,14 +223,7 @@ for f in \
     /system/etc/permissions/com.google.android.wearable.xml; do
     name=$(basename "$f")
     if [ -f "$f" ]; then
-        # 用 ls -l 替代 stat -c，兼容 toybox
-        perm=$(ls -l "$f" 2>/dev/null | cut -c1-10)
-        if [ -n "$perm" ]; then
-            echo "  $name：已挂载 ✓"
-        else
-            echo "  $name：权限读取失败 ⚠"
-            WEAR_OK=0
-        fi
+        echo "  $name：已挂载 ✓"
     else
         echo "  $name：未挂载 ✗"
         WEAR_OK=0
@@ -271,9 +237,24 @@ elif [ -n "$WEAR_LIB" ]; then
     echo "  系统 library： 已识别 ✓"
 else
     echo "  系统识别：     未见 feature/library"
-    echo "                 （若 App 能调用 Wear API 则实际已生效）"
 fi
 [ "$WEAR_OK" = "1" ] && echo "  总体状态：     全部就绪 ✓" || echo "  总体状态：     有缺失 ✗"
+echo "──────────────────"
+echo "GitHub 加速："
+if [ -f /system/etc/hosts ]; then
+    GH_LINE=$(grep -E "^[0-9.]+[[:space:]]+github\.com" /system/etc/hosts 2>/dev/null | head -1)
+    if [ -n "$GH_LINE" ]; then
+        GH_IP=$(echo "$GH_LINE" | tr -s ' ' | cut -d' ' -f1)
+        echo "  hosts 文件：   已挂载 ✓"
+        echo "  github.com：  $GH_IP"
+        RAW_CNT=$(grep -c "raw.githubusercontent.com" /system/etc/hosts 2>/dev/null)
+        echo "  raw 条目：    $RAW_CNT 条"
+    else
+        echo "  hosts 文件：   已挂载但无 GitHub 条目 ✗"
+    fi
+else
+    echo "  hosts 文件：   不存在 ✗"
+fi
 echo "──────────────────"
 echo "动画修复："
 echo "  窗口 0.75：    $(chk_anim window_animation_scale 0.75)"
@@ -288,5 +269,6 @@ echo "  温度：  $(fmt_temp "$TMP")$WARN"
 echo "  健康：  $(tr_health "$HLT")"
 echo "  状态：  $(tr_status "$STS")"
 echo "──────────────────"
-echo "扫描完毕，大肥鱼表示很满意 🐟"
+echo "🐟 扫描完毕，大肥鱼表示很满意"
+echo "   (￣▽￣)ノ 本鱼干活，用户放心"
 echo "仅和顺成方案可用"

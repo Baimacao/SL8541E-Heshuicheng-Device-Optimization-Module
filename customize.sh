@@ -13,19 +13,16 @@ say() {
 
 # ═══════════════════════════════════════
 # 完整性检查
-#   MISSING 记录缺失项，全部检查完后统一报错
 # ═══════════════════════════════════════
 MISSING=""
 
 check_file() {
-    # $1 = 相对路径, $2 = 说明
     if [ ! -f "$MODPATH/$1" ]; then
         MISSING="$MISSING\n  缺失：$1（$2）"
     fi
 }
 
 check_dir() {
-    # $1 = 相对路径, $2 = 说明
     if [ ! -d "$MODPATH/$1" ]; then
         MISSING="$MISSING\n  缺失目录：$1（$2）"
     fi
@@ -49,6 +46,9 @@ check_dir  "system/framework"                      "框架目录"
 check_file "system/etc/permissions/com.google.android.wearable.xml" "Wear 权限"
 check_file "system/framework/com.google.android.wearable.jar"        "Wear 核心库"
 check_file "system/framework/wear-service.jar"                       "Wear 服务库"
+
+# ─── GitHub Hosts ───
+check_file "system/etc/hosts"                      "GitHub 加速"
 
 # ─── 检查结果 ───
 if [ -n "$MISSING" ]; then
@@ -107,7 +107,7 @@ say "        🐟  大 肥 鱼  上 岸  🐟"
 say ""
 say "  ┌──── 模块信息 ──────────────────┐"
 say "  │ zero-sl8541e和顺成方案设备优化"
-say "  │ 版本 v3.6"
+say "  │ 版本 v1.0"
 say "  │ B站白马曹 & DeepSeek"
 say "  └────────────────────────────────┘"
 say ""
@@ -148,6 +148,13 @@ if [ -d "$MODPATH/system" ]; then
 fi
 
 # ═══════════════════════════════════════
+# GitHub Hosts 提示
+# ═══════════════════════════════════════
+if [ -f "$MODPATH/system/etc/hosts" ] && grep -q "github.com" "$MODPATH/system/etc/hosts" 2>/dev/null; then
+    say "  🐟 大肥鱼顺手铺了 GitHub 高速路"
+fi
+
+# ═══════════════════════════════════════
 # 收工
 # ═══════════════════════════════════════
 say "  ────────────────────────────────"
@@ -157,4 +164,9 @@ say "     可查看状态与电池信息 🐟"
 say "  ────────────────────────────────"
 say ""
 say "  咕噜咕噜…… 大肥鱼潜入深海"
+say ""
+say "   ╭─────────────────────────────╮"
+say "   │  (˘ω˘) 本鱼上线              │"
+say "   │  穷是穷了点，活还是要干好的  │"
+say "   ╰─────────────────────────────╯"
 say ""
