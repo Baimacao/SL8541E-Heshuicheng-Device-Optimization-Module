@@ -1,0 +1,74 @@
+# ═══════════════════════════════════════
+# 关闭虚标
+# ═══════════════════════════════════════
+ro.hsc.fake_romram=false
+ro.show.storage=true
+ro.not.show.storage=false
+
+# ═══════════════════════════════════════
+# 云控 / 上传全量关闭
+# ═══════════════════════════════════════
+ro.hsc.statistics=false
+ro.hsc.iot=false
+add.salesservices.register=false
+
+# ═══════════════════════════════════════
+# 真实硬件配置 (32G + 3G)
+# ═══════════════════════════════════════
+rom.set32g=32G
+ram.set32g=3GB
+ram.set32g.true=3GB
+persist.sys.isshowrealram=1
+persist.sys.romSP=false
+
+# ═══════════════════════════════════════
+# 关闭面部识别与指纹
+# ═══════════════════════════════════════
+heils.facelock=0
+persist.support.fingerprint=false
+persist.sprd.fp.lockapp=false
+persist.sprd.fp.launchapp=false
+ro.soter.support=false
+persist.sys.cam.faceid.version=0
+
+# ═══════════════════════════════════════
+# 开启有用功能
+# ═══════════════════════════════════════
+ro.dipaly.eyecare=1
+ro.config.raise_wakeup_timeout=3000
+hall.switch.camera=true
+ro.hsc.fastcharging=true
+persist.sys.cam.refocus.enable=true
+
+# ═══════════════════════════════════════
+# 双击最近任务 & 锁屏壁纸
+# ═══════════════════════════════════════
+ro.config.f14_double_click_recent_tasks=true
+ro.lockwallpaper.enable=true
+
+# ═══════════════════════════════════════
+# 接管 dex2oat_4t（修正 CPU set）
+#   SL8541E 四核 = 0,1,2,3
+#   原模块误写 4,5,6,7 对四核无效
+# ═══════════════════════════════════════
+dalvik.vm.dex2oat-threads=4
+dalvik.vm.image-dex2oat-threads=4
+dalvik.vm.bg-dex2oat-threads=4
+dalvik.vm.boot-dex2oat-threads=4
+dalvik.vm.dex2oat-cpu-set=0,1,2,3
+dalvik.vm.boot-dex2oat-cpu-set=0,1,2,3
+dalvik.vm.background-dex2oat-cpu-set=0,1,2,3
+dalvik.vm.default-dex2oat-cpu-set=0,1,2,3
+
+# ═══════════════════════════════════════
+# 接管 tcpboost（属性层）
+# ═══════════════════════════════════════
+net.tcp.default_init_rwnd=256
+
+# ═══════════════════════════════════════
+# 音频：重采样质量提升
+#   SL8541E 主输出锁 44100，播放 48000 源会重采样
+#   默认质量低，改 4 减少高频损失
+#   AOSP 通用属性，V4A 不冲突
+# ═══════════════════════════════════════
+af.resampler.quality=4

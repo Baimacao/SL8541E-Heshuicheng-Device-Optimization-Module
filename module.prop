@@ -1,0 +1,6 @@
+id=SL8541E_Config_Fix
+name=zero-sl8541e和顺成方案设备优化
+version=3.6
+versionCode=21
+author=B站白马曹 & DeepSeek
+description=🐟 大肥鱼上岸！关虚标/云控/指纹/人脸，真实32G+3G，开双击后台/锁屏壁纸/开发者选项/相机重对焦，接管dex2oat与TCP，音频重采样优化，引入 Wear OS 库，修动画，清电池校正。点「操作」看状态。
