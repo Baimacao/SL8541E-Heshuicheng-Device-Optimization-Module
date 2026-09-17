@@ -2,7 +2,7 @@
 
 English | [中文](README.md)
 
-Made by [Bili-bamacao](https://space.bilibili.com/1329200878) and DeepSeek ("Big Fatty Fish").
+Made by [Bili-baimacao](https://space.bilibili.com/1329200878) and DeepSeek ("Big Fatty Fish").
 
 For **Unisoc SL8541E / SC9832E + Heshuicheng (HSC) smartwatches**, Android 8.1.
 
@@ -168,7 +168,7 @@ Issues should include: full Action output, fix.log, device model and OS version,
 
 Credits
 
-· Bili-bamacao — Project initiator, hardware testing
+· Bili-baimacao — Project initiator, hardware testing
 · DeepSeek ("Big Fatty Fish") — Code authoring, solution design
 
 License
