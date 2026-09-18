@@ -53,6 +53,18 @@ resetprop dalvik.vm.default-dex2oat-cpu-set 0,1,2,3
 # ─── TCP 属性 ───
 resetprop net.tcp.default_init_rwnd 256
 
+# ─── 动画底层参数（恢复完整动画）───
+resetprop debug.sf.disable_backpressure 0
+resetprop debug.sf.latch_unsignaled 0
+
+# ═══════════════════════════════════════
+# 强制关闭 ZRAM
+# ═══════════════════════════════════════
+setprop ctl.stop zram 2>/dev/null
+swapoff /dev/block/zram0 2>/dev/null
+resetprop ro.config.zram.support false
+echo "[$(date)] ZRAM 已强制关闭" >> "$LOG"
+
 # ═══════════════════════════════════════
 # 清理电池校正文件
 # ═══════════════════════════════════════

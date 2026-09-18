@@ -48,8 +48,6 @@ ro.lockwallpaper.enable=true
 
 # ═══════════════════════════════════════
 # 接管 dex2oat_4t（修正 CPU set）
-#   SL8541E 四核 = 0,1,2,3
-#   原模块误写 4,5,6,7 对四核无效
 # ═══════════════════════════════════════
 dalvik.vm.dex2oat-threads=4
 dalvik.vm.image-dex2oat-threads=4
@@ -67,8 +65,29 @@ net.tcp.default_init_rwnd=256
 
 # ═══════════════════════════════════════
 # 音频：重采样质量提升
-#   SL8541E 主输出锁 44100，播放 48000 源会重采样
-#   默认质量低，改 4 减少高频损失
-#   AOSP 通用属性，V4A 不冲突
 # ═══════════════════════════════════════
 af.resampler.quality=4
+
+# ═══════════════════════════════════════
+# 关闭系统日志（减少 I/O 与后台唤醒）
+# ═══════════════════════════════════════
+persist.logd.logpersistd=OFF
+persist.logd.size=64K
+persist.logd.size.crash=64K
+persist.logd.size.system=64K
+persist.logd.size.main=64K
+persist.logd.size.radio=64K
+persist.logd.size.events=64K
+
+# ═══════════════════════════════════════
+# 强制关闭 ZRAM
+# ═══════════════════════════════════════
+ro.config.zram.support=false
+
+# ═══════════════════════════════════════
+# 修复动画跳帧
+#   原厂设 1（省电降延迟），代价是动画缺失
+#   改回 0 恢复完整动画
+# ═══════════════════════════════════════
+debug.sf.disable_backpressure=0
+debug.sf.latch_unsignaled=0

@@ -49,6 +49,10 @@ resetprop dalvik.vm.default-dex2oat-cpu-set 0,1,2,3
 # TCP 属性
 resetprop net.tcp.default_init_rwnd 256
 
+# 动画底层参数
+resetprop debug.sf.disable_backpressure 0
+resetprop debug.sf.latch_unsignaled 0
+
 # ═══════════════════════════════════════
 # 接管 tcpboost（内核层 sysctl）
 # ═══════════════════════════════════════
@@ -64,14 +68,74 @@ echo 1 > /proc/sys/net/ipv4/tcp_tw_reuse 2>/dev/null
 echo 1 > /proc/sys/net/ipv4/tcp_low_latency 2>/dev/null
 
 # ═══════════════════════════════════════
+# 强制关闭 ZRAM（二次保险）
+# ═══════════════════════════════════════
+setprop ctl.stop zram 2>/dev/null
+swapoff /dev/block/zram0 2>/dev/null
+ZRAM_STATE=$(grep zram /proc/swaps 2>/dev/null)
+if [ -z "$ZRAM_STATE" ]; then
+    echo "[$(date)] ✅ ZRAM 已关闭" >> "$LOG"
+else
+    echo "[$(date)] ⚠ ZRAM 仍在运行: $ZRAM_STATE" >> "$LOG"
+fi
+
+# ═══════════════════════════════════════
+# 充电加速 3000mA
+# ═══════════════════════════════════════
+echo "[$(date)] 调整充电电流..." >> "$LOG"
+
+CHG_AC="/sys/devices/platform/battery/power_supply/ac/current_max"
+CHG_USB="/sys/devices/platform/battery/power_supply/usb/current_max"
+CHG_LIMIT="/sys/devices/platform/battery/power_supply/battery/input_current_limit"
+CHG_MAX="/sys/devices/platform/battery/power_supply/battery/current_max"
+
+for node in "$CHG_AC" "$CHG_USB" "$CHG_LIMIT" "$CHG_MAX"; do
+    if [ -e "$node" ]; then
+        echo 3000 > "$node" 2>/dev/null
+        echo "[$(date)]   $(basename $(dirname $node))/$(basename $node) = $(cat $node 2>/dev/null)" >> "$LOG"
+    fi
+done
+
+# ═══════════════════════════════════════
 # 内核参数
-#   swappiness 保持原厂 150
-#   I/O 调度改 noop（闪存最佳）
 # ═══════════════════════════════════════
 echo 150 > /proc/sys/vm/swappiness 2>/dev/null
 echo noop > /sys/block/mmcblk0/queue/scheduler 2>/dev/null
 
-echo "[$(date)] 内存: swappiness=$(cat /proc/sys/vm/swappiness) | TCP: rmem=$(cat /proc/sys/net/core/rmem_max) cc=$(cat /proc/sys/net/ipv4/tcp_congestion_control)" >> "$LOG"
+# ═══════════════════════════════════════
+# 动态 DNS 守护进程
+# ═══════════════════════════════════════
+IP_POOL="20.205.243.166 20.205.243.168 20.27.177.113 20.200.245.247 140.82.112.4"
+MOD_HOSTS="$MODDIR/system/etc/hosts"
+
+nohup sh -c '
+    MOD_HOSTS="'"$MOD_HOSTS"'"
+    LOG="'"$LOG"'"
+    IP_POOL="'"$IP_POOL"'"
+
+    while true; do
+        if ! ping -c 1 -w 2 github.com >/dev/null 2>&1; then
+            for ip in $IP_POOL; do
+                if ping -c 1 -w 2 "$ip" >/dev/null 2>&1; then
+                    if [ -f "$MOD_HOSTS" ]; then
+                        sed -i "/github.com/d" "$MOD_HOSTS" 2>/dev/null
+                        echo "$ip github.com" >> "$MOD_HOSTS"
+                        echo "$ip www.github.com" >> "$MOD_HOSTS"
+                        echo "$ip api.github.com" >> "$MOD_HOSTS"
+                        mount --bind "$MOD_HOSTS" /system/etc/hosts 2>/dev/null
+                        setprop net.dns1 8.8.8.8
+                        setprop net.dns2 114.114.114.114
+                        echo "[$(date)] DNS 失效，已切换至 $ip" >> "$LOG"
+                    fi
+                    break
+                fi
+            done
+        fi
+        sleep 1800
+    done
+' >/dev/null 2>&1 &
+
+echo "[$(date)] 动态 DNS 守护进程已启动" >> "$LOG"
 
 # ═══════════════════════════════════════
 # Settings 辅助
@@ -112,7 +176,6 @@ write_setting() {
     return 1
 }
 
-# ─── 开发者选项 ───
 echo "[$(date)] 开始写开发者选项……" >> "$LOG"
 if write_setting development_settings_enabled 1; then
     echo "[$(date)] ✅ 开发者选项写入成功" >> "$LOG"

@@ -60,7 +60,6 @@ sget() {
     xml_get "$1"
 }
 
-# 动画检测（纯 shell 整数近似比较）
 chk_anim() {
     key="$1"; exp="$2"
     cur=$(sget "$key")
@@ -205,7 +204,6 @@ IO_SHOW=$(echo "$IO_RAW" | sed 's/\[/【/;s/\]/】/')
 echo "  I/O 调度：     $IO_SHOW"
 [ "$IO_SEL" = "noop" ] && echo "  I/O 生效：     已生效 ✓" || echo "  I/O 生效：     未生效 ✗ (当前 $IO_SEL)"
 
-# ─── 物理内存 ───
 MEM_TOTAL=$(grep MemTotal /proc/meminfo 2>/dev/null | tr -s ' ' | cut -d' ' -f2)
 MEM_AVAIL=$(grep MemAvailable /proc/meminfo 2>/dev/null | tr -s ' ' | cut -d' ' -f2)
 if [ -n "$MEM_TOTAL" ] && [ -n "$MEM_AVAIL" ]; then
@@ -214,6 +212,29 @@ if [ -n "$MEM_TOTAL" ] && [ -n "$MEM_AVAIL" ]; then
     echo "  物理内存：    ${AVAIL_MB}MB / ${TOT_MB}MB 可用"
 fi
 
+echo "──────────────────"
+echo "⚡ 充电与内存："
+if grep -q zram /proc/swaps 2>/dev/null; then
+    echo "  ZRAM：        仍开启 ✗"
+else
+    echo "  ZRAM：        已关闭 ✓"
+fi
+
+CHG_LIMIT="/sys/devices/platform/battery/power_supply/battery/input_current_limit"
+CHG_AC="/sys/devices/platform/battery/power_supply/ac/current_max"
+
+if [ -e "$CHG_LIMIT" ]; then
+    VAL=$(cat "$CHG_LIMIT" 2>/dev/null | tr -d " \n")
+    [ -n "$VAL" ] && echo "  input_limit： ${VAL} mA"
+fi
+if [ -e "$CHG_AC" ]; then
+    VAL=$(cat "$CHG_AC" 2>/dev/null | tr -d " \n")
+    [ -n "$VAL" ] && echo "  ac_max：      ${VAL} mA"
+fi
+echo "──────────────────"
+echo "🎬 动画底层参数："
+echo "  sf 背压：      $(chk debug.sf.disable_backpressure 0)"
+echo "  sf 同步：      $(chk debug.sf.latch_unsignaled 0)"
 echo "──────────────────"
 echo "Wear OS 库："
 WEAR_OK=1
@@ -254,6 +275,11 @@ if [ -f /system/etc/hosts ]; then
     fi
 else
     echo "  hosts 文件：   不存在 ✗"
+fi
+if pgrep -f "ping -c 1 -w 2 github" >/dev/null 2>&1; then
+    echo "  动态DNS守护：  运行中 ✓"
+else
+    echo "  动态DNS守护：  未运行 ✗"
 fi
 echo "──────────────────"
 echo "动画修复："
