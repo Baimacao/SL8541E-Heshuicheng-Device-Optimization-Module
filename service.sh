@@ -29,6 +29,14 @@ fi
 trap 'rm -f "$LOCK" 2>/dev/null' EXIT
 
 fish_log "── service.sh 开始 ──"
+
+# ⚠ 必须先等开机完成，再动手。这不是"保险起见"，是硬前置：
+#   · service.sh 是 late_start，此刻 system_server 还没把设置项初始化完，
+#     现在写动画缩放会被它随后的初始化覆盖掉 —— 白写
+#   · 动画的"两步法"（先 1.0 再目标值）整段依赖这个时序，提前跑等于两步都白做
+#   · 属性类操作倒是越早越好，但那些在 post-fs-data 里已经做过了
+#   v1.2 原本就有这个循环，v1.3 重构时被我漏掉了 —— 别再删。
+wait_boot
 fish_log "开机完成，大肥鱼二次巡检"
 
 # ── 1. 属性清单：core 二次保险 + service 段一次补齐 ──
@@ -101,18 +109,45 @@ else
 fi
 settings_put adb_enabled 1 2 >/dev/null 2>&1
 
-# ── 7. 动画：两步法 ──
-#   为什么要先写 1.0 再写目标值：某些 ROM 上直接写缩放值会被忽略，
-#   先归位再设才会真正落盘（实测出来的土办法）。
-settings put global window_animation_scale 1.0 2>/dev/null
-settings put global transition_animation_scale 1.0 2>/dev/null
-settings put global animator_duration_scale 1.0 2>/dev/null
-sleep 1
-settings put global window_animation_scale 0.75 2>/dev/null
-settings put global transition_animation_scale 0.75 2>/dev/null
-settings put global animator_duration_scale 0.5 2>/dev/null
+# ── 7. 动画：两步法 + 落盘校验 ──
+#   为什么要"先 1.0 再目标值"：直接写缩放值在某些 ROM 上不落盘（会被忽略），
+#   先归位到 1.0、隔一秒再写目标值才会真正写进去。这是实测出来的土办法。
+#
+#   为什么要校验：这三行原来是无条件盲写，写失败了脚本也不知道，
+#   日志里打印出来的还是"期望值"而不是"实际值" —— 看着像成功。
+#   现在每一步都读回确认，没落盘就重试。
+anim_put() {
+    _key="$1"; _val="$2"; _try=1
+    while [ "$_try" -le 4 ]; do
+        settings put global "$_key" "$_val" 2>/dev/null
+        [ "$(settings_get "$_key")" = "$_val" ] && return 0
+        # settings 连不上 system_server 时改 XML 兜底（与开发者选项同一套逻辑）
+        [ "$_try" -ge 3 ] && settings_xml_force "$_key" "$_val"
+        sleep 2
+        _try=$((_try + 1))
+    done
+    return 1
+}
 
-fish_log "动画值：窗口=$(settings_get window_animation_scale) 过渡=$(settings_get transition_animation_scale) 时长=$(settings_get animator_duration_scale)"
+anim_ok=1
+# 第一步：归位
+anim_put window_animation_scale     1.0 || anim_ok=0
+anim_put transition_animation_scale 1.0 || anim_ok=0
+anim_put animator_duration_scale    1.0 || anim_ok=0
+sleep 1
+# 第二步：理想值
+anim_put animator_duration_scale    0.5 || anim_ok=0
+anim_put transition_animation_scale 0.75 || anim_ok=0
+anim_put window_animation_scale     0.75 || anim_ok=0
+
+_aw=$(settings_get window_animation_scale)
+_at=$(settings_get transition_animation_scale)
+_aa=$(settings_get animator_duration_scale)
+if [ "$anim_ok" = "1" ]; then
+    fish_log "动画两步法完成：窗口=$_aw 过渡=$_at 时长=$_aa"
+else
+    fish_log "⚠ 动画写入未全部落盘（窗口=$_aw 过渡=$_at 时长=$_aa）—— 可能 settings 连不上 system_server"
+fi
 
 # ── 8. 生成 WebUI 状态页 ──
 [ -f "$MODDIR/webroot/gen_status.sh" ] && sh "$MODDIR/webroot/gen_status.sh" 2>/dev/null

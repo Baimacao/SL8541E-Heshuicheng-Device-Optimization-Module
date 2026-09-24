@@ -32,7 +32,7 @@ and it shuts the telemetry down on the way.
 
 ---
 
-## What's new in v1.4
+## What's new in v1.5
 
 No new features. **This release is a refactor.** Nothing was removed, half the duplicated
 code is gone.
@@ -87,6 +87,32 @@ o.* telemetry-related properties (`ro.hsc.statistics` / `ro.hsc.iot` /
 through `resetprop`** — if the system rewrote them, nothing re-applied them. They are now in`lib/prop.list` like everything else.
 
 > This is the only behavior change in this release, and it hardens the telemetry shutdown.
+
+### 3b. Fixed a regression introduced in v1.3/v1.4 (important)
+
+**`service.sh` had lost its "wait for boot to complete" step.**
+
+v1.2 looped until `sys.boot_completed=1`, then slept 5s. While refactoring in v1.3 I moved
+that into a `wait_boot()` helper in `lib/common.sh` — and **forgot to call it** from the new
+`service.sh`.
+
+The consequence is not "a bit early", it is that **the entire animation block did nothing**:
+
+- `service.sh` runs as late_start, before boot completes;
+- at that point system_server has not finished initializing settings, so the animation scales
+  we write get overwritten by its own initialization;
+- the "two-step" trick (write 1.0, wait a second, then write the target) **depends entirely on
+  that ordering** — running early makes both steps pointless.
+
+No error, no trace: the status page just says "not applied ✗". A textbook silent regression.
+
+**Fix**: call `wait_boot()` explicitly, with a comment explaining it is a hard precondition,
+not a precaution. The animation writes also went from blind to **read-back verified with retries**
+(previously a failed write was invisible, and the log printed the *expected* value, not the actual one).
+
+> This was only found because the user asked whether the animations were supposed to be set to
+> 1.0 first, after boot. The two-step itself was intact — but its precondition had been dropped.
+> **The trick only means anything if the precondition holds.**
 
 ### 4. Copy rewritten
 

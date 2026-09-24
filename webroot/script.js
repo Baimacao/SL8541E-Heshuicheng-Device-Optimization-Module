@@ -56,7 +56,7 @@
         // 版本号写死在页面里，省一次请求（模块版本在 module.prop 里改了，
         // 这里也要跟着改，或者干脆点「操作」按钮看报告里的真实版本）
         var ver = document.getElementById('version');
-        if (ver) { ver.textContent = 'v1.4'; }
+        if (ver) { ver.textContent = 'v1.5'; }
     }
 
     if (document.readyState === 'loading') {
