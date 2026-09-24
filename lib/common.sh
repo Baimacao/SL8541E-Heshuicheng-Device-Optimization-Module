@@ -298,4 +298,165 @@ module_version() {
     fi
 }
 
+module_version_code() {
+    if [ -f "$MODDIR/module.prop" ]; then
+        grep '^versionCode=' "$MODDIR/module.prop" 2>/dev/null | head -1 | cut -d= -f2
+    else
+        echo 0
+    fi
+}
+
+# ── 版本号比较 ──
+# ver_cmp 1.3 1.4  → 打印 -1(前者旧) / 0(相等) / 1(前者新)
+# 只比数字段，容忍 v 前缀、不等长的段位（1.10 > 1.9 必须成立，
+# 所以绝不能按字符串比 —— 这是版本比较最经典的坑）。
+ver_cmp() {
+    _a=$(echo "$1" | sed 's/^[vV]//' | tr -c '0-9.' ' ' | cut -d' ' -f1)
+    _b=$(echo "$2" | sed 's/^[vV]//' | tr -c '0-9.' ' ' | cut -d' ' -f1)
+    _i=1
+    while [ "$_i" -le 4 ]; do
+        _x=$(echo "$_a" | cut -d. -f"$_i"); [ -z "$_x" ] && _x=0
+        _y=$(echo "$_b" | cut -d. -f"$_i"); [ -z "$_y" ] && _y=0
+        if [ "$_x" -gt "$_y" ] 2>/dev/null; then echo 1; return; fi
+        if [ "$_x" -lt "$_y" ] 2>/dev/null; then echo -1; return; fi
+        _i=$((_i + 1))
+    done
+    echo 0
+}
+
+# ── HTTP 工具 ──
+# 这台表是 Android 8.1（API 27），/system/bin/curl 有；wget 不一定。
+# 所以两条路都留着，谁在就用谁。
+# http_get <url> <输出文件|->      → 返回 0 表示成功且内容非空
+http_get() {
+    _url="$1"; _out="$2"
+    if command -v curl >/dev/null 2>&1; then
+        if [ "$_out" = "-" ]; then
+            curl -sL --max-time 25 "$_url" 2>/dev/null
+        else
+            curl -sL --max-time 25 -o "$_out" "$_url" 2>/dev/null
+        fi
+        [ $? -eq 0 ] && return 0
+    fi
+    if command -v wget >/dev/null 2>&1; then
+        if [ "$_out" = "-" ]; then
+            wget -q -O - --timeout=25 "$_url" 2>/dev/null
+        else
+            wget -q -O "$_out" --timeout=25 "$_url" 2>/dev/null
+        fi
+        [ $? -eq 0 ] && return 0
+    fi
+    return 1
+}
+
+# 只看响应头，取重定向目标（更新检查就靠它，不消耗 API 配额）
+# http_location <url> → 打印 Location 头的值
+http_location() {
+    _url="$1"
+    if command -v curl >/dev/null 2>&1; then
+        curl -sI --max-time 20 "$_url" 2>/dev/null | grep -i '^location:' | head -1 | tr -d '\r' | sed 's/^[Ll]ocation:[[:space:]]*//'
+        return 0
+    fi
+    if command -v wget >/dev/null 2>&1; then
+        wget -S --spider --timeout=20 "$_url" 2>&1 >/dev/null | grep -i '^[[:space:]]*Location:' | head -1 | sed 's/.*[Ll]ocation:[[:space:]]*//' | tr -d '\r'
+        return 0
+    fi
+    return 1
+}
+
+# 文件到底是什么（Android 上 `file` 命令不一定有，直接看魔数）
+# file_kind <path> → zip / gzip / html / text / 空 / 未知
+file_kind() {
+    _p="$1"
+    [ -s "$_p" ] || { echo "空"; return; }
+    _m=$(dd if="$_p" bs=1 count=4 2>/dev/null | od -An -tx1 | tr -d ' \n')
+    case "$_m" in
+        504b0304*) echo "zip" ;;          # PK..
+        1f8b*)     echo "gzip" ;;
+        *) case "$(head -c 64 "$_p" 2>/dev/null | tr -d '\n')" in
+               *'<!DOCTYPE'*|*'<html'*) echo "html" ;;
+               *) echo "其他" ;;
+           esac ;;
+    esac
+}
+
+# ── 安装模块 ──
+# 各根管理器的 CLI 一家一个样，挨个试。
+# 都不可用时返回 1，由调用方决定要不要走 APatch 的目录级兜底。
+module_install() {
+    _zip="$1"
+    if command -v magisk >/dev/null 2>&1; then
+        magisk --install-module "$_zip" 2>/dev/null && return 0
+    fi
+    if command -v ksud >/dev/null 2>&1; then
+        ksud module install "$_zip" 2>/dev/null && return 0
+    fi
+    if command -v apd >/dev/null 2>&1; then
+        apd module install "$_zip" 2>/dev/null && return 0
+    fi
+    return 1
+}
+
+# APatch 兜底：APatch 到目前没有公开的"安装模块"CLI，只能按目录约定来：
+#   解到临时目录 → 读出 module.prop 的 id → 逐项覆盖进 /data/adb/modules/<id>
+# 重启后根管理器会认这个目录，并执行其中的 customize.sh 做权限与完整性检查。
+#
+# ⚠ 这是"覆盖自身"，所以调用方必须先确认过三件事：
+#     用户二次点击 + zip 魔数正确 + 包内 module.prop 的 id 与自己一致
+#   任何一条不满足都不许走这里。
+module_install_apatch() {
+    _zip="$1"; _id_expected="$2"
+    command -v unzip >/dev/null 2>&1 || return 1
+    # AP_ROOT 只为离线测试留的注入口，真机上恒为 /data/adb/modules
+    _aproot="${AP_ROOT:-/data/adb/modules}"
+    [ -d "$_aproot" ] || return 1
+
+    _stage="$MODDIR/.update.stage"
+    rm -rf "$_stage" 2>/dev/null
+    mkdir -p "$_stage" 2>/dev/null || return 1
+
+    unzip -o -q "$_zip" -d "$_stage" 2>/dev/null || { rm -rf "$_stage"; return 1; }
+
+    # 包可能是"带一层目录"或"平铺"，两种都认
+    if [ ! -f "$_stage/module.prop" ]; then
+        _inner=$(find "$_stage" -maxdepth 2 -name module.prop 2>/dev/null | head -1)
+        [ -n "$_inner" ] && _stage="${_inner%/module.prop}"
+    fi
+    [ -f "$_stage/module.prop" ] || { rm -rf "$_stage"; return 1; }
+
+    _id=$(grep '^id=' "$_stage/module.prop" 2>/dev/null | head -1 | cut -d= -f2 | tr -d ' \r\n')
+    [ -n "$_id" ] || { rm -rf "$_stage"; return 1; }
+    if [ -n "$_id_expected" ] && [ "$_id" != "$_id_expected" ]; then
+        fish_log "APatch 兜底中止：包内 id=$_id 与自身 id=$_id_expected 不一致"
+        rm -rf "$_stage"
+        return 1
+    fi
+
+    _target="$_aproot/$_id"
+    if [ -d "$_target" ]; then
+        rm -rf "$_target.bak" 2>/dev/null
+        cp -a "$_target" "$_target.bak" 2>/dev/null
+    fi
+
+    mkdir -p "$_target" 2>/dev/null
+    for _item in "$_stage"/* "$_stage"/.[!.]*; do
+        [ -e "$_item" ] || continue
+        _name=$(basename "$_item")
+        case "$_name" in
+            fix.log|update.zip|update.state|.update.confirm|.update.stage|.desc.bak|.run.lock|.dnsguard.pid)
+                continue ;;   # 运行时产物不覆盖
+        esac
+        rm -rf "$_target/$_name" 2>/dev/null
+        cp -a "$_item" "$_target/$_name" 2>/dev/null
+    done
+
+    # 新版本重启后才生效，顺手清掉可能存在的禁用/待删标记
+    rm -f "$_target/disable" "$_target/remove" 2>/dev/null
+    rm -rf "$_stage" 2>/dev/null
+
+    [ -f "$_target/module.prop" ] || return 1
+    fish_log "APatch 兜底完成：已覆盖 $_target（旧版备份在 $_target.bak）"
+    return 0
+}
+
 fish_log "lib/common.sh 已加载（resetprop=$HAS_RESETPROP）"

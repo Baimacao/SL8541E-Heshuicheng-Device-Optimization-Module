@@ -67,6 +67,21 @@ body { padding: 0; background: #0a0e14; }
 <div id="app">
 HEAD
 
+# 更新卡片放最前面：有没有新版本是用户最想第一眼看到的
+UPD_S=$(kv UPD_STATUS)
+case "$UPD_S" in
+    newer)  UPD_TXT="<span class=\"v ok\">有新版本 v$(esc "$(kv UPD_REMOTE)") 🆕</span>" ;;
+    same)   UPD_TXT='<span class="v ok">已是最新 ✓</span>' ;;
+    ahead)  UPD_TXT='<span class="v dim">本地比远端新</span>' ;;
+    error)  UPD_TXT='<span class="v ng">检查失败</span>' ;;
+    *)      UPD_TXT='<span class="v dim">未检查 —— 点「操作」按钮</span>' ;;
+esac
+printf '  <div class="card"><h2><span class="p">&gt;</span>UPDATE · 模块更新</h2>\n'
+printf '    <div class="row"><span class="k">本地版本</span><span class="v">v%s</span></div>\n' "$(esc "$VER")"
+printf '    <div class="row"><span class="k">远端检查</span>%s</div>\n' "$UPD_TXT"
+[ -n "$(kv UPD_CHECKED)" ] && printf '    <div class="row"><span class="k">上次检查</span><span class="v dim">%s</span></div>\n' "$(esc "$(kv UPD_CHECKED)")"
+printf '  </div>\n'
+
 card "SPOOF_STRIP · 虚标剥离"
 row "5G 假图标关闭"  "$(badge "$(kv SPOOF_5G)")"
 row "状态栏回落 4G"  "$(badge "$(kv SPOOF_LOGO)")"

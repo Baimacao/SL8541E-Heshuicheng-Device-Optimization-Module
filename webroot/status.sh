@@ -22,6 +22,16 @@ out() { echo "$1|$2"; }
 
 out "VER" "$(module_version)"
 
+# ── 更新状态（由 lib/install.sh check 写进 update.state）──
+UPD_STATE="$MODDIR/update.state"
+if [ -f "$UPD_STATE" ]; then
+    out "UPD_STATUS"  "$(grep '^status=' "$UPD_STATE" 2>/dev/null | head -1 | cut -d= -f2)"
+    out "UPD_REMOTE"  "$(grep '^remote=' "$UPD_STATE" 2>/dev/null | head -1 | cut -d= -f2)"
+    out "UPD_CHECKED" "$(grep '^checked=' "$UPD_STATE" 2>/dev/null | head -1 | cut -d= -f2)"
+else
+    out "UPD_STATUS" "unknown"
+fi
+
 # ── 虚标剥离 ──
 out "SPOOF_5G"    "$(chkv persist.sys.5g false)"
 out "SPOOF_LOGO"  "$(chkv persist.sys.logo 4G)"

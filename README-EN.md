@@ -32,7 +32,7 @@ and it shuts the telemetry down on the way.
 
 ---
 
-## What's new in v1.3
+## What's new in v1.4
 
 No new features. **This release is a refactor.** Nothing was removed, half the duplicated
 code is gone.
@@ -158,7 +158,46 @@ fast-charge notification, hall camera, raise-to-wake.
 ### WebUI
 
 Round-screen status page with three tabs: **Status** (live snapshot; refresh via the
-Action button), **Help** (11 self-service fixes), **About** (info, red lines, hardware limits).
+Action button), **Help** (13 self-service fixes), **About** (info, red lines, hardware limits).
+
+### Auto-update from GitHub
+
+The module checks GitHub Releases for newer versions — **no login, no token required**.
+
+| Action | Result |
+|---|---|
+| Tap the **Action** button once | checks for an update; if one exists, the target version is remembered |
+| **Tap it again** (within 3 min) | only the second tap downloads and installs — deliberately two-step, to prevent fat-fingering |
+| Reboot | takes effect |
+
+Or run it manually (easier to watch):
+
+```bash
+su -c 'sh /data/adb/modules/SL8541E_Config_Fix/lib/install.sh install'
+```
+
+**Design notes** (deliberate, not incidental):
+
+- **The check avoids the GitHub API.** The device is anonymous and `api.github.com` allows
+  only 60 requests/hour/IP — one scrape elsewhere and it's gone. Instead we read the
+  **302 redirect** from `/releases/latest`, whose `Location` header carries the tag at no
+  quota cost. The API is only a fallback.
+- **Every download is validated**: first the magic bytes must be `PK` (guards against
+  rate-limit or HTML error pages), then the archive must contain `module.prop` and
+  `customize.sh` (guards against truncated packages). Failures are discarded, never unpacked.
+- **Four install tiers**: `magisk --install-module` → `ksud module install` →
+  `apd module install` → **APatch directory-level fallback**.
+  - APatch has **no public module-install CLI** today, hence tier four: unpack to a temp dir,
+    verify the packaged `id` matches our own, then copy item-by-item into
+    `/data/adb/modules/<id>`, backing up the previous version to `.bak` first.
+  - Runtime artifacts (`fix.log` / `update.zip` / `update.state` / `.dnsguard.pid`) are
+    **never overwritten** — otherwise the log and state get wiped.
+  - A package whose `id` doesn't match is **rejected** (prevents another module hijacking ours).
+  - Only when all four tiers fail do we fall back to "download only, report the path".
+- Every tier has a precondition check, because this step **replaces the module itself**.
+  A silent unpack-over-self is the easiest way to make a module vanish after a reboot.
+- **`module.prop`'s description gains a hint** (`[有新版本 v1.4]`) so the update is visible
+  directly in the root manager's module list. It is restored when there is no update.
 
 ### Environment
 
@@ -214,6 +253,7 @@ SL8541E_Config_Fix/
 ├── lib/
 │   ├── common.sh                   shared library
 │   ├── prop.list                   ★ property manifest (single source of truth)
+│   ├── install.sh                  ★ GitHub update check + install
 │   └── dns-guard.sh                GitHub dynamic DNS guardian
 ├── webroot/
 │   ├── index.html                  WebUI (status / help / about)

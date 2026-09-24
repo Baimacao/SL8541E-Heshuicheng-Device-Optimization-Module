@@ -17,6 +17,29 @@ MODDIR="${MODDIR:-${0%/*}}"
 # shellcheck source=lib/common.sh
 . "$MODDIR/lib/common.sh"
 
+# ── 先看有没有更新（根管理器基本不给按钮传参，所以 install 只能靠
+#    `sh action.sh install` 手动触发，见 README 的"手动更新"一节）──
+UPD=$(sh "$MODDIR/lib/install.sh" "${1:-check}" 2>/dev/null)
+UPD_STATUS=$(echo "$UPD" | grep '^STATUS=' | cut -d= -f2)
+UPD_RESULT=$(echo "$UPD" | grep '^RESULT=' | cut -d= -f2)
+UPD_REMOTE=$(echo "$UPD" | grep '^REMOTE=' | cut -d= -f2)
+
+case "$UPD_STATUS" in
+    newer)  UPD_LINE="有新版本 v$UPD_REMOTE 🆕" ;;
+    same)   UPD_LINE="已是最新 ✓" ;;
+    ahead)  UPD_LINE="本地比远端新（自编包）" ;;
+    error)  UPD_LINE="检查失败（网络/被墙）" ;;
+    *)      UPD_LINE="未检查" ;;
+esac
+case "$UPD_RESULT" in
+    need_confirm)     UPD_LINE="$UPD_LINE → 再点一次「操作」即安装" ;;
+    installed)        UPD_LINE="✅ 已安装 v$UPD_REMOTE，重启后生效" ;;
+    installed_apatch) UPD_LINE="✅ 已装 v$UPD_REMOTE（APatch 目录级兜底），重启后生效" ;;
+    manual_needed)    UPD_LINE="已下载 v$UPD_REMOTE，需去管理器手动安装" ;;
+    download_failed)  UPD_LINE="$UPD_LINE（下载失败）" ;;
+    bad_download|bad_package) UPD_LINE="$UPD_LINE（包校验失败，已丢弃）" ;;
+esac
+
 # ── 顺手刷新状态页（WebUI 的「状态」Tab 读的就是它）──
 [ -f "$MODDIR/webroot/gen_status.sh" ] && sh "$MODDIR/webroot/gen_status.sh" 2>/dev/null
 
@@ -80,6 +103,10 @@ esac
 echo "【SL8541E 优化模块 · 体检报告】"
 echo "🐟 大肥鱼上线。别慌，我先看看这表还剩几口气。"
 echo "   (˘ω˘) 女仆装已穿好，开始扫描"
+echo "──────────────────"
+echo "模块更新："
+echo "  $(module_version) → $UPD_LINE"
+[ -f "$MODDIR/update.state" ] && { echo "  上次检查：$(grep '^checked=' "$MODDIR/update.state" 2>/dev/null | cut -d= -f2)"; }
 echo "──────────────────"
 echo "虚标剥离："
 echo "  5G假图标关闭：   $(ok_fail persist.sys.5g false)"

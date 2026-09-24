@@ -14,7 +14,7 @@
         &gt;&lt;(((('&gt;
        &gt;&lt;(((('&gt;     SL8541E
       &gt;&lt;(((('&gt;      config_fix
-       &gt;&lt;(((('&gt;     v1.3
+       &gt;&lt;(((('&gt;     v1.4
         &gt;&lt;(((('&gt;
     </pre>
     <div class="meta">
@@ -32,12 +32,40 @@
 
   <section id="tab-status" class="tab-panel active">
     <div class="hint">
-      <span class="dim">#</span> 这是开机快照，不是直播。点模块卡片「操作」刷新后再回来看。
+      <span class="dim">#</span> 这是开机快照，不是直播。点模块卡片「操作」刷新后再回来看。<br>
+      <span class="dim">#</span> 点一次「操作」= 检查 GitHub 更新；<b>再点一次 = 开始安装</b>（连点两次是防手滑）。
     </div>
     <iframe id="status-frame" src="status_generated.html" frameborder="0"></iframe>
   </section>
 
   <section id="tab-help" class="tab-panel">
+
+    <details class="faq">
+      <summary><span class="brk">[?]</span> 怎么更新模块（有新版了）</summary>
+      <div class="faq-body">
+        <p><span class="dim">&gt;</span> 本模块<b>自带更新检查</b>，点一次「操作」按钮就会去 GitHub 看有没有新版</p>
+        <p><span class="dim">&gt;</span> 有新版时，<b>再点一次「操作」按钮就开始安装</b> ——
+           连点两次是故意的，防止手滑把模块换掉</p>
+        <p><span class="dim">&gt;</span> 装完要<b>重启</b>才生效</p>
+        <p><span class="dim">&gt;</span> 也可以手动更新（更稳，看得见过程）：</p>
+        <p><code>su -c 'sh /data/adb/modules/SL8541E_Config_Fix/lib/install.sh install'</code></p>
+        <p><span class="dim">&gt;</span> 如果提示"没有可用的安装 CLI"，说明根管理器不带命令行安装接口，
+           包已下载到模块目录，去管理器里手动安装即可：</p>
+        <p><code>/data/adb/modules/SL8541E_Config_Fix/update.zip</code></p>
+        <p><span class="dim">&gt;</span> 模块在 GitHub 上的地址见「关于」页</p>
+      </div>
+    </details>
+
+    <details class="faq">
+      <summary><span class="brk">[?]</span> 更新检查显示失败</summary>
+      <div class="faq-body">
+        <p><span class="dim">&gt;</span> 这台表在国内，GitHub 时通时不通，属正常现象</p>
+        <p><span class="dim">&gt;</span> 检查走的是 <code>/releases/latest</code> 的跳转，<b>不消耗 API 配额</b>，
+           所以失败基本就是网络问题，不是被限速</p>
+        <p><span class="dim">&gt;</span> 挂了 hosts 加速的话，点一次「操作」刷新 DNS 守护再试</p>
+        <p><span class="dim">&gt;</span> 实在不行就手动下载安装包刷进去，功能完全一样</p>
+      </div>
+    </details>
 
     <details class="faq">
       <summary><span class="brk">[?]</span> 刷进去了，但没反应 / 找不到模块</summary>
@@ -162,7 +190,7 @@
     <div class="card about-card">
       <h2><span class="dim">&gt;</span> MODULE_INFO</h2>
       <div class="item"><span class="label">name</span><span class="value">zero-sl8541e和顺成方案设备优化</span></div>
-      <div class="item"><span class="label">version</span><span class="value">v1.3</span></div>
+      <div class="item"><span class="label">version</span><span class="value">v1.4</span></div>
       <div class="item"><span class="label">id</span><span class="value">SL8541E_Config_Fix</span></div>
       <div class="item"><span class="label">device</span><span class="value">SL8541E / SC9832E + HSC</span></div>
       <div class="item"><span class="label">root</span><span class="value">APatch / Magisk / KernelSU</span></div>
@@ -239,7 +267,7 @@
   </section>
 
   <footer>
-    <span class="dim">──</span> SL8541E_Config_Fix v1.3 <span class="dim">──</span>
+    <span class="dim">──</span> SL8541E_Config_Fix v1.4 <span class="dim">──</span>
   </footer>
 
 </div>
