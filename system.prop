@@ -1,29 +1,37 @@
-# ═══════════════════════════════════════
-# 关闭虚标
-# ═══════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════
+#  system.prop —— 开机由根管理器注入的属性（只放 ro.* 与 persist.* 的默认值）
+#  ---------------------------------------------------------------------------
+#  和 lib/prop.list 的分工：
+#    · 本文件是"开机注入"，比 resetprop 更早、更原生
+#    · lib/prop.list 是"运行时改写"，能覆盖已被系统写过的值
+#    两边都要写 —— 只写一边的话，总有一半属性不生效。
+#
+#  ⚠ 本文件的值改动后必须同步 lib/prop.list，反之亦然。
+#  ⚠ 需要强制覆盖已有值的走 resetprop -n，那不是本文件能做的。
+# ═══════════════════════════════════════════════════════════════════════════
+
+# ── 剥离虚标 ──
+# 原厂：3G+32G 标成 8G+128G，四核标十核，没有 5G 硬件却挂个 5G 图标。
+# 胆子真是肥嘟嘟的啊。
 ro.hsc.fake_romram=false
 ro.show.storage=true
 ro.not.show.storage=false
 
-# ═══════════════════════════════════════
-# 云控 / 上传全量关闭
-# ═══════════════════════════════════════
+# ── 关云控 / 上报 ──
+# APR 是展锐的异常上报框架，会定期上传设备信息；这里关掉，顺便省电。
 ro.hsc.statistics=false
 ro.hsc.iot=false
 add.salesservices.register=false
 
-# ═══════════════════════════════════════
-# 真实硬件配置 (32G + 3G)
-# ═══════════════════════════════════════
+# ── 真实硬件配置（32G + 3G）──
 rom.set32g=32G
 ram.set32g=3GB
 ram.set32g.true=3GB
 persist.sys.isshowrealram=1
 persist.sys.romSP=false
 
-# ═══════════════════════════════════════
-# 关闭面部识别与指纹
-# ═══════════════════════════════════════
+# ── 指纹 / 人脸 ──
+# 这块表的指纹精度差、误识率高，关了反而省电。
 heils.facelock=0
 persist.support.fingerprint=false
 persist.sprd.fp.lockapp=false
@@ -31,24 +39,21 @@ persist.sprd.fp.launchapp=false
 ro.soter.support=false
 persist.sys.cam.faceid.version=0
 
-# ═══════════════════════════════════════
-# 开启有用功能
-# ═══════════════════════════════════════
+# ── 开着有用的 ──
 ro.dipaly.eyecare=1
+# ↑「dipaly」是原厂拼错的属性名。别改，改了就不生效了。
 ro.config.raise_wakeup_timeout=3000
 hall.switch.camera=true
 ro.hsc.fastcharging=true
 persist.sys.cam.refocus.enable=true
 
-# ═══════════════════════════════════════
-# 双击最近任务 & 锁屏壁纸
-# ═══════════════════════════════════════
+# ── 双击最近任务 / 锁屏壁纸 ──
 ro.config.f14_double_click_recent_tasks=true
 ro.lockwallpaper.enable=true
 
-# ═══════════════════════════════════════
-# dex2oat 4 核修正
-# ═══════════════════════════════════════
+# ── dex2oat 四核修正 ──
+# 原厂 dex2oat_4t 模块把 CPU set 写成 4,5,6,7 —— 这颗表只有 0~3 四个核，
+# dex2oat 找不到核心会静默退回单线程：名义四核，实际一个核在搬砖。
 dalvik.vm.dex2oat-threads=4
 dalvik.vm.image-dex2oat-threads=4
 dalvik.vm.bg-dex2oat-threads=4
@@ -58,19 +63,17 @@ dalvik.vm.boot-dex2oat-cpu-set=0,1,2,3
 dalvik.vm.background-dex2oat-cpu-set=0,1,2,3
 dalvik.vm.default-dex2oat-cpu-set=0,1,2,3
 
-# ═══════════════════════════════════════
-# TCP 属性
-# ═══════════════════════════════════════
+# ── TCP ──
+# 原值 60 太小，慢启动太慢。本内核没编译 BBR，拥塞算法保持 cubic。
 net.tcp.default_init_rwnd=256
 
-# ═══════════════════════════════════════
-# 音频重采样
-# ═══════════════════════════════════════
+# ── 音频 ──
+# 硬件锁 44100Hz/16bit；48k 音源要重采样，默认质量一般，提到 4 减少高频损失。
+# 不碰 V4A 的 audio_effects.conf —— 那是红线。
 af.resampler.quality=4
 
-# ═══════════════════════════════════════
-# 关闭系统日志
-# ═══════════════════════════════════════
+# ── 关系统日志 ──
+# 弱鸡 SoC 上，日志写入是实打实的 I/O 与后台唤醒。
 persist.logd.logpersistd=OFF
 persist.logd.size=64K
 persist.logd.size.crash=64K
@@ -79,20 +82,17 @@ persist.logd.size.main=64K
 persist.logd.size.radio=64K
 persist.logd.size.events=64K
 
-# ═══════════════════════════════════════
-# 强制关闭 ZRAM
-# ═══════════════════════════════════════
+# ── 强制关 ZRAM ──
+# 3G 内存剩 2G 可用，压缩换页纯属给 CPU 加活。
 ro.config.zram.support=false
 
-# ═══════════════════════════════════════
-# 修复动画跳帧
-# ═══════════════════════════════════════
+# ── 修复动画跳帧 ──
+# 原厂为省电把这两个设成 1，结果动画跳帧严重；改回 0 恢复完整动画。
+# 代价是弱 CPU 上可能轻微掉帧 —— 想换回省电取向就改回 1。
 debug.sf.disable_backpressure=0
 debug.sf.latch_unsignaled=0
 
-# ═══════════════════════════════════════
-# ⭐ UI 实时优先级
-#   让 UI / RenderThread 用 SCHED_FIFO，
-#   防止弱 CPU 错过 vsync 导致掉帧
-# ═══════════════════════════════════════
+# ── UI 实时优先级 ──
+# 让 UI / RenderThread 走 SCHED_FIFO，防止弱 CPU 错过 vsync。
+# 纯收益，不影响动画完整性。
 sys.use_fifo_ui=1

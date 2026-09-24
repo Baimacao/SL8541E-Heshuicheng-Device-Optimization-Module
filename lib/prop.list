@@ -1,0 +1,88 @@
+# ═══════════════════════════════════════════════════════════════════════════
+#  属性清单 · 单一事实来源
+#  ---------------------------------------------------------------------------
+#  格式：  scope | key | value | 这行为什么存在
+#  scope：  core     = post-fs-data.sh 与 service.sh 都写（二次保险）
+#           service  = 只在开机完成后写
+#           action   = 留给「操作」按钮查询时对照（不参与开机写入）
+#
+#  改属性的规矩（血泪版）：
+#    · ro.*      只读，必须走 resetprop；system.prop 里也要同步写一份
+#    · persist.* 一旦写入就落盘 /data/property/persistent_properties，
+#                卸载模块不会自动删 → uninstall.sh 里必须逐个清
+#    · dalvik.vm.* 同 ro.*，改 build.prop 无效
+#    · 「dipaly」是原厂拼错的属性名，不是我们写错，别"顺手修正"
+# ═══════════════════════════════════════════════════════════════════════════
+
+# ── 剥离虚标（原厂把 3G+32G 的表标成 8G+128G / 四核标十核 / 无 5G 硬件标 5G）──
+core|persist.sys.5g|false|关掉 5G 假图标
+core|persist.sys.logo|4G|状态栏回落 4G
+core|persist.sys.cpu|4|四核就报四核
+core|persist.sys.rom.fake|0|存储虚标总开关
+core|persist.sys.isshowrealram|1|按真实内存显示
+core|persist.sys.android.version|8.1|原厂把安卓版本也吹了
+
+# ── 云控 / 上报全量关闭（APR 是展锐的异常上报框架，会定期上传设备信息）──
+#   注意：这一组全是 ro.*，system.prop 只负责开机注入一次。
+#   v1.2 就漏在这里 —— 系统只要改回去，模块这边没人再管。现在一并走 resetprop。
+core|ro.hsc.statistics|false|统计总开关
+core|ro.hsc.iot|false|IoT 云控
+core|add.salesservices.register|false|销售服务注册
+core|ro.soter.support|false|Soter 支付支持
+core|persist.sys.apr.enabled|0|APR 总开关
+core|persist.sys.apr.autoupload|0|禁止自动上传
+core|persist.sys.apr.reportlevel|0|上报等级归零
+service|persist.sys.apr.intervaltime|0|上报间隔（只在后期补一次即可）
+service|persist.sys.apr.lifetime|0|生命周期上报
+service|persist.sys.apr.reload|0|重载上报
+service|persist.sys.apr.exceptionnode|0|异常节点上报
+core|persist.sys.bsservice.enable|0|BS 服务
+core|persist.sys.heartbeat.enable|0|心跳（闹钟疑似相关的唯一嫌疑，出问题先删它）
+core|persist.sys.start_udpdatastall|0|UDP 数据收集
+core|persist.sys.romSP|false|存储虚标子开关
+
+# ── 指纹 / 人脸（这块表指纹精度差、误识率高，关了反而省电）──
+core|persist.support.fingerprint|false|指纹总开关
+service|persist.sprd.fp.lockapp|false|指纹锁应用
+service|persist.sprd.fp.launchapp|false|指纹启动应用
+core|heils.facelock|0|人脸解锁
+service|persist.sys.cam.faceid.version|0|人脸版本号归零
+
+# ── 开着有用的 ──
+core|persist.sys.cam.refocus.enable|true|相机重对焦
+core|ro.config.f14_double_click_recent_tasks|true|双击打开后台
+core|ro.lockwallpaper.enable|true|锁屏壁纸
+
+# ── dex2oat 四核修正 ──
+#   原厂 dex2oat_4t 模块把 CPU set 写成 4,5,6,7，但这颗表只有 0~3 四个核，
+#   dex2oat 找不到核心会静默退回单线程 —— 写着"4 核"其实一个核在干活。
+core|dalvik.vm.dex2oat-threads|4|编译线程
+core|dalvik.vm.image-dex2oat-threads|4|镜像编译线程
+core|dalvik.vm.bg-dex2oat-threads|4|后台编译线程
+core|dalvik.vm.boot-dex2oat-threads|4|开机编译线程
+core|dalvik.vm.dex2oat-cpu-set|0,1,2,3|★ 修正点
+core|dalvik.vm.boot-dex2oat-cpu-set|0,1,2,3|★ 修正点
+core|dalvik.vm.background-dex2oat-cpu-set|0,1,2,3|★ 修正点
+core|dalvik.vm.default-dex2oat-cpu-set|0,1,2,3|★ 修正点
+
+# ── 网络 ──
+core|net.tcp.default_init_rwnd|256|原值 60 太小，慢启动太慢
+
+# ── 图形 / 动画 ──
+#   原厂为省电把这两个设成 1，结果动画跳帧严重；改回 0 恢复完整动画。
+core|debug.sf.disable_backpressure|0|恢复 SurfaceFlinger 背压
+core|debug.sf.latch_unsignaled|0|恢复 vsync 同步
+core|sys.use_fifo_ui|1|UI/RenderThread 走 SCHED_FIFO，弱 CPU 防掉帧
+core|ro.config.zram.support|false|3G 剩 2G，压缩换页纯属给 CPU 加活
+
+# ── 关日志（弱鸡 SoC 上，日志写入是实打实的 I/O 与后台唤醒）──
+core|persist.logd.logpersistd|OFF|关掉持久化日志
+service|persist.logd.size|64K|主缓冲
+service|persist.logd.size.crash|64K|crash 缓冲
+service|persist.logd.size.system|64K|system 缓冲
+service|persist.logd.size.main|64K|main 缓冲
+service|persist.logd.size.radio|64K|radio 缓冲
+service|persist.logd.size.events|64K|events 缓冲
+
+# ── 音频重采样质量（硬件锁 44100/16bit；不碰 V4A，那是红线）──
+core|af.resampler.quality|4|默认质量一般，提到 4 减少高频损失

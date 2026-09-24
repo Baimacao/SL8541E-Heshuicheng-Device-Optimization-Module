@@ -1,146 +1,57 @@
 #!/system/bin/sh
+# ═══════════════════════════════════════════════════════════════════════════
+#  webroot/gen_status.sh —— 把状态渲染成 status_generated.html
+#  ---------------------------------------------------------------------------
+#  APatch 的 WebUI API（ksu.exec）是空壳，回调根本不触发，所以这里不用 JS 取数，
+#  改成开机时和点「操作」时**生成一个静态 HTML**，index.html 用 iframe 加载它。
+#  WebView 也在 80 版，能不用的新特性一概不用。
+#
+#  取值统一走 status.sh（唯一事实来源），本脚本只负责排版。
+# ═══════════════════════════════════════════════════════════════════════════
 
-MODDIR="${MODDIR:-/data/adb/modules/SL8541E_Config_Fix}"
+MODDIR="${MODDIR:-$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)}"
+[ -d "$MODDIR" ] || MODDIR="/data/adb/modules/SL8541E_Config_Fix"
+
 WEBROOT="$MODDIR/webroot"
-[ ! -d "$WEBROOT" ] && exit 0
+[ -d "$WEBROOT" ] || exit 0
 
 TMP="$WEBROOT/status_generated.html.tmp"
 OUT="$WEBROOT/status_generated.html"
+KV="$WEBROOT/.status.kv"
 
-chkv() {
-    [ "$(getprop "$1")" = "$2" ] && echo "1" || echo "0"
+# ── 先取数，落到临时文件（不要在管道里跑循环，子 shell 里的变量出不来）──
+sh "$WEBROOT/status.sh" > "$KV" 2>/dev/null
+
+# kv <KEY> → 值
+kv() { grep "^$1|" "$KV" 2>/dev/null | head -1 | cut -d'|' -f2-; }
+
+# ok/ng 徽章
+badge() {
+    case "$1" in
+        1) printf '<span class="v ok">[OK]</span>' ;;
+        0) printf '<span class="v ng">[NG]</span>' ;;
+        *) printf '<span class="v dim">%s</span>' "$(esc "$1")" ;;
+    esac
 }
-ok_fail() {
-    [ "$1" = "1" ] && echo '<span class="value ok">[OK]</span>' || echo '<span class="value fail">[NG]</span>'
+# 简单转义：状态页的值全是我们自己拼的，但电池 health 之类是系统给的原文
+esc() {
+    printf '%s' "$1" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g'
 }
-
-V_5G=$(chkv persist.sys.5g false)
-V_LOGO=$(chkv persist.sys.logo 4G)
-V_CPU=$(chkv persist.sys.cpu 4)
-V_FAKE=$(chkv persist.sys.rom.fake 0)
-V_RAM=$(chkv persist.sys.isshowrealram 1)
-V_FP=$(chkv persist.support.fingerprint false)
-V_FACE=$(chkv heils.facelock 0)
-V_REFOCUS=$(chkv persist.sys.cam.refocus.enable true)
-V_DBL=$(chkv ro.config.f14_double_click_recent_tasks true)
-V_LOCK=$(chkv ro.lockwallpaper.enable true)
-
-V_STAT=$(chkv ro.hsc.statistics false)
-V_IOT=$(chkv ro.hsc.iot false)
-V_APR=$(chkv persist.sys.apr.autoupload 0)
-V_HB=$(chkv persist.sys.heartbeat.enable 0)
-V_BS=$(chkv persist.sys.bsservice.enable 0)
-
-DEX_THREADS=$(getprop dalvik.vm.dex2oat-threads)
-DEX_CPUSET=$(getprop dalvik.vm.dex2oat-cpu-set)
-
-TCP_RMEM=$(cat /proc/sys/net/core/rmem_max 2>/dev/null)
-TCP_WMEM=$(cat /proc/sys/net/core/wmem_max 2>/dev/null)
-TCP_CC=$(cat /proc/sys/net/ipv4/tcp_congestion_control 2>/dev/null)
-V_RWND=$(chkv net.tcp.default_init_rwnd 256)
-
-V_RESAMPLE=$(chkv af.resampler.quality 4)
-SWAPPINESS=$(cat /proc/sys/vm/swappiness 2>/dev/null)
-
-IO_RAW=$(cat /sys/block/mmcblk0/queue/scheduler 2>/dev/null)
-IO_SEL=$(echo "$IO_RAW" | grep -o '\[[a-z]*\]' | tr -d '[]')
-[ "$IO_SEL" = "noop" ] && IO_SHOW="noop [OK]" || IO_SHOW="$IO_SEL [NG]"
-
-MEM_TOTAL=$(grep MemTotal /proc/meminfo 2>/dev/null | tr -s ' ' | cut -d' ' -f2)
-MEM_AVAIL=$(grep MemAvailable /proc/meminfo 2>/dev/null | tr -s ' ' | cut -d' ' -f2)
-[ -n "$MEM_TOTAL" ] && MEM_TOTAL=$((MEM_TOTAL / 1024))
-[ -n "$MEM_AVAIL" ] && MEM_AVAIL=$((MEM_AVAIL / 1024))
-
-grep -q zram /proc/swaps 2>/dev/null && V_ZRAM="0" || V_ZRAM="1"
-
-# ⭐ Android Go
-GO_MODE=$(getprop ro.config.low_ram)
-[ "$GO_MODE" = "true" ] && GO_SHOW="enabled" || GO_SHOW="disabled"
-GO_THRESHOLD=$(getprop ro.config.low_ram.threshold_gb)
-[ -z "$GO_THRESHOLD" ] && GO_THRESHOLD="n/a"
-
-# ⭐ 充电（µA ÷ 1000 = mA）
-CHG_LIMIT="/sys/devices/platform/battery/power_supply/battery/input_current_limit"
-CHG_AC="/sys/devices/platform/battery/power_supply/ac/current_max"
-CHG_LIMIT_VAL=""
-CHG_AC_VAL=""
-if [ -e "$CHG_LIMIT" ]; then
-    RAW=$(cat "$CHG_LIMIT" 2>/dev/null | tr -d ' \n')
-    [ -n "$RAW" ] && CHG_LIMIT_VAL=$((RAW / 1000))
-fi
-if [ -e "$CHG_AC" ]; then
-    RAW=$(cat "$CHG_AC" 2>/dev/null | tr -d ' \n')
-    [ -n "$RAW" ] && CHG_AC_VAL=$((RAW / 1000))
-fi
-
-V_SF_BP=$(chkv debug.sf.disable_backpressure 0)
-V_SF_LATCH=$(chkv debug.sf.latch_unsignaled 0)
-
-[ -f /system/framework/com.google.android.wearable.jar ] && V_WJ="1" || V_WJ="0"
-[ -f /system/framework/wear-service.jar ] && V_WS="1" || V_WS="0"
-[ -f /system/etc/permissions/com.google.android.wearable.xml ] && V_WX="1" || V_WX="0"
-
-GH_IP=""
-[ -f /system/etc/hosts ] && GH_IP=$(grep -E "^[0-9.]+[[:space:]]+github\.com" /system/etc/hosts 2>/dev/null | head -1 | tr -s ' ' | cut -d' ' -f1)
-[ -n "$GH_IP" ] && V_GH="1" || V_GH="0"
-
-pgrep -f "ping -c 1 -w 2 github" >/dev/null 2>&1 && V_DNS="1" || V_DNS="0"
-
-get_anim() {
-    for xml in /data/system/users/0/settings_global.xml /data/system/settings_global.xml; do
-        [ -f "$xml" ] || continue
-        val=$(grep -o "name=\"$1\"[^/]*" "$xml" 2>/dev/null | grep -o 'value="[^"]*"' | head -1 | sed 's/value="//;s/"$//')
-        [ -n "$val" ] && { echo "$val"; return; }
-    done
+row()  { printf '    <div class="row"><span class="k">%s</span>%s</div>\n' "$1" "$2"; }
+# 空值统一显示成 "—"：空白行会让人以为模块没生效，其实只是这项读不到
+rowv() {
+    _v="$2"
+    [ -z "$_v" ] && _v="—"
+    printf '    <div class="row"><span class="k">%s</span><span class="v">%s</span></div>\n' "$1" "$(esc "$_v")"
 }
-ANIM_WIN=$(get_anim window_animation_scale)
-ANIM_TRANS=$(get_anim transition_animation_scale)
-ANIM_DUR=$(get_anim animator_duration_scale)
+card() { printf '  <div class="card"><h2><span class="p">&gt;</span>%s</h2>\n' "$1"; }
+endc() { printf '  </div>\n'; }
 
-BATT_DIRS="/sys/class/power_supply/battery /sys/class/power_supply/sprdbattery /sys/class/power_supply/BAT0"
-find_node() {
-    for d in $BATT_DIRS; do
-        [ -e "$d/$1" ] && { echo "$d/$1"; return; }
-    done
-}
-read_node() {
-    p=$(find_node "$1")
-    [ -z "$p" ] && return
-    cat "$p" 2>/dev/null | tr -d ' \r\n'
-}
-CAP=$(read_node capacity)
-CUR=$(read_node current_now)
-TMP=$(read_node temp)
-HLT=$(read_node health)
-STS=$(read_node status)
+VER=$(kv VER)
+[ -z "$VER" ] && VER="?"
 
-if [ -n "$CUR" ]; then
-    if [ "$CUR" -lt 0 ] 2>/dev/null; then
-        CUR_SHOW="放电 $(( (0 - CUR) / 1000 )) mA"
-    else
-        CUR_SHOW="充电 $(( CUR / 1000 )) mA"
-    fi
-else
-    CUR_SHOW="?"
-fi
-
-[ -n "$TMP" ] && BATT_TEMP="$((TMP / 10)).$((TMP % 10))" || BATT_TEMP="?"
-case "$HLT" in
-    Good) BATT_HEALTH="良好" ;;
-    Overheat) BATT_HEALTH="过热" ;;
-    Dead) BATT_HEALTH="损坏" ;;
-    "") BATT_HEALTH="未知" ;;
-    *) BATT_HEALTH="$HLT" ;;
-esac
-case "$STS" in
-    Charging) BATT_STATUS="充电中" ;;
-    Discharging) BATT_STATUS="放电中" ;;
-    Full) BATT_STATUS="已充满" ;;
-    Not\ charging) BATT_STATUS="未充电" ;;
-    *) BATT_STATUS="未知" ;;
-esac
-
-cat > "$TMP" << HTMLEOF
+{
+cat << 'HEAD'
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -154,120 +65,104 @@ body { padding: 0; background: #0a0e14; }
 </head>
 <body>
 <div id="app">
+HEAD
 
-<div class="card">
-<h2><span class="dim">&gt;</span>SPOOF_STRIP</h2>
-<div class="item"><span class="label">5G icon off</span>$(ok_fail $V_5G)</div>
-<div class="item"><span class="label">4G label</span>$(ok_fail $V_LOGO)</div>
-<div class="item"><span class="label">CPU 4-core</span>$(ok_fail $V_CPU)</div>
-<div class="item"><span class="label">Fake off</span>$(ok_fail $V_FAKE)</div>
-<div class="item"><span class="label">Real RAM</span>$(ok_fail $V_RAM)</div>
-</div>
+card "SPOOF_STRIP · 虚标剥离"
+row "5G 假图标关闭"  "$(badge "$(kv SPOOF_5G)")"
+row "状态栏回落 4G"  "$(badge "$(kv SPOOF_LOGO)")"
+row "CPU 报四核"     "$(badge "$(kv SPOOF_CPU)")"
+row "虚标总开关"     "$(badge "$(kv SPOOF_FAKE)")"
+row "真实内存显示"   "$(badge "$(kv SPOOF_RAM)")"
+endc
 
-<div class="card">
-<h2><span class="dim">&gt;</span>TELEMETRY_OFF</h2>
-<div class="item"><span class="label">Statistics</span>$(ok_fail $V_STAT)</div>
-<div class="item"><span class="label">IoT cloud</span>$(ok_fail $V_IOT)</div>
-<div class="item"><span class="label">APR upload</span>$(ok_fail $V_APR)</div>
-<div class="item"><span class="label">Heartbeat</span>$(ok_fail $V_HB)</div>
-<div class="item"><span class="label">BS service</span>$(ok_fail $V_BS)</div>
-</div>
+card "TELEMETRY_OFF · 云控上报"
+row "统计上报"       "$(badge "$(kv TEL_STAT)")"
+row "IoT 云控"       "$(badge "$(kv TEL_IOT)")"
+row "APR 自动上传"   "$(badge "$(kv TEL_APR)")"
+row "心跳"           "$(badge "$(kv TEL_HB)")"
+row "BS 服务"        "$(badge "$(kv TEL_BS)")"
+endc
 
-<div class="card">
-<h2><span class="dim">&gt;</span>BIOMETRIC_OFF</h2>
-<div class="item"><span class="label">Fingerprint</span>$(ok_fail $V_FP)</div>
-<div class="item"><span class="label">Face unlock</span>$(ok_fail $V_FACE)</div>
-</div>
+card "BIOMETRIC_OFF · 生物识别"
+row "指纹"           "$(badge "$(kv BIO_FP)")"
+row "人脸"           "$(badge "$(kv BIO_FACE)")"
+endc
 
-<div class="card">
-<h2><span class="dim">&gt;</span>FEATURES_ON</h2>
-<div class="item"><span class="label">Camera refocus</span>$(ok_fail $V_REFOCUS)</div>
-<div class="item"><span class="label">Double-tap recents</span>$(ok_fail $V_DBL)</div>
-<div class="item"><span class="label">Lock wallpaper</span>$(ok_fail $V_LOCK)</div>
-</div>
+card "FEATURES_ON · 开着有用"
+row "相机重对焦"     "$(badge "$(kv FEAT_REFOCUS)")"
+row "双击打开后台"   "$(badge "$(kv FEAT_DBLTAP)")"
+row "锁屏壁纸"       "$(badge "$(kv FEAT_LOCKWP)")"
+row "开发者选项"     "$(badge "$(kv FEAT_DEVOPT)")"
+endc
 
-<div class="card">
-<h2><span class="dim">&gt;</span>DEX2OAT_4CORE</h2>
-<div class="item"><span class="label">Threads</span><span class="value">$DEX_THREADS</span></div>
-<div class="item"><span class="label">CPU set</span><span class="value">$DEX_CPUSET</span></div>
-<div class="item"><span class="label">correct</span>$([ "$DEX_CPUSET" = "0,1,2,3" ] && echo '<span class="value ok">[OK]</span>' || echo '<span class="value fail">[NG]</span>')</div>
-</div>
+card "DEX2OAT · 四核修正"
+rowv "线程数"        "$(kv DEX_THREADS)"
+rowv "CPU set"       "$(kv DEX_CPUSET)"
+row "set 正确"       "$(badge "$([ "$(kv DEX_CPUSET)" = "0,1,2,3" ] && echo 1 || echo 0)")"
+endc
 
-<div class="card">
-<h2><span class="dim">&gt;</span>TCP_TUNING</h2>
-<div class="item"><span class="label">rmem_max</span><span class="value">$TCP_RMEM</span></div>
-<div class="item"><span class="label">wmem_max</span><span class="value">$TCP_WMEM</span></div>
-<div class="item"><span class="label">congestion</span><span class="value">$TCP_CC</span></div>
-<div class="item"><span class="label">rwnd</span>$(ok_fail $V_RWND)</div>
-</div>
+card "NETWORK · 网络"
+rowv "rmem_max"      "$(kv NET_RMEM)"
+rowv "wmem_max"      "$(kv NET_WMEM)"
+rowv "拥塞算法"      "$(kv NET_CC)"
+row "rwnd 属性"      "$(badge "$(kv NET_RWND)")"
+row "hosts 挂载"     "$(badge "$(kv NET_HOSTS)")"
+rowv "github.com"    "$(kv NET_GHIP)"
+row "DNS 守护"       "$(badge "$(kv NET_DNSGUARD)")"
+endc
 
-<div class="card">
-<h2><span class="dim">&gt;</span>KERNEL</h2>
-<div class="item"><span class="label">resampler</span>$(ok_fail $V_RESAMPLE)</div>
-<div class="item"><span class="label">swappiness</span><span class="value">$SWAPPINESS</span></div>
-<div class="item"><span class="label">i/o sched</span><span class="value">$IO_SHOW</span></div>
-<div class="item"><span class="label">mem</span><span class="value">${MEM_AVAIL}/${MEM_TOTAL} MB</span></div>
-</div>
+card "KERNEL · 内核"
+rowv "重采样质量"    "$(kv KRN_RESAMPLE)"
+rowv "swappiness"    "$(kv KRN_SWAP)"
+row "I/O 调度"       "$(badge "$(kv KRN_IO_SEL)")"
+rowv "可用内存"      "$(kv MEM_AVAIL)/$(kv MEM_TOTAL) MB"
+endc
 
-<div class="card">
-<h2><span class="dim">&gt;</span>ANDROID_GO</h2>
-<div class="item"><span class="label">low_ram</span><span class="value">$GO_SHOW</span></div>
-<div class="item"><span class="label">threshold</span><span class="value">$GO_THRESHOLD</span></div>
-</div>
+card "CHARGING · 充电"
+row "ZRAM 已关"      "$(badge "$(kv CHG_ZRAM)")"
+rowv "input_limit"   "$(kv CHG_LIMIT) mA"
+rowv "ac_max"        "$(kv CHG_AC) mA"
+endc
 
-<div class="card">
-<h2><span class="dim">&gt;</span>CHARGING</h2>
-<div class="item"><span class="label">ZRAM off</span>$(ok_fail $V_ZRAM)</div>
-<div class="item"><span class="label">input_limit</span><span class="value">${CHG_LIMIT_VAL:-?} mA</span></div>
-<div class="item"><span class="label">ac_max</span><span class="value">${CHG_AC_VAL:-?} mA</span></div>
-</div>
+card "GRAPHICS · 流畅度"
+row "sf 背压恢复"    "$(badge "$(kv GFX_BP)")"
+row "sf vsync 同步"  "$(badge "$(kv GFX_LATCH)")"
+row "UI FIFO"        "$(badge "$(kv GFX_FIFO)")"
+rowv "窗口动画"      "$(kv ANIM_WIN)x"
+rowv "过渡动画"      "$(kv ANIM_TRANS)x"
+rowv "动画时长"      "$(kv ANIM_DUR)x"
+endc
 
-<div class="card">
-<h2><span class="dim">&gt;</span>SF_PARAMS</h2>
-<div class="item"><span class="label">bp restored</span>$(ok_fail $V_SF_BP)</div>
-<div class="item"><span class="label">latch restored</span>$(ok_fail $V_SF_LATCH)</div>
-</div>
+card "WEAR_OS · 环境"
+row "wearable.jar"   "$(badge "$(kv WEAR_JAR)")"
+row "wear-service"   "$(badge "$(kv WEAR_SVC)")"
+row "permissions"    "$(badge "$(kv WEAR_XML)")"
+endc
 
-<div class="card">
-<h2><span class="dim">&gt;</span>WEAR_OS</h2>
-<div class="item"><span class="label">wearable.jar</span>$(ok_fail $V_WJ)</div>
-<div class="item"><span class="label">wear-service.jar</span>$(ok_fail $V_WS)</div>
-<div class="item"><span class="label">permissions xml</span>$(ok_fail $V_WX)</div>
-</div>
+card "BATTERY · 电池"
+rowv "电量"          "$(kv BATT_CAP)%"
+rowv "电压"          "$(kv BATT_VOLT)"
+rowv "电流"          "$(kv BATT_CUR)"
+rowv "温度"          "$(kv BATT_TEMP) °C"
+rowv "健康"          "$(kv BATT_HEALTH)"
+rowv "状态"          "$(kv BATT_STATUS)"
+endc
 
-<div class="card">
-<h2><span class="dim">&gt;</span>GITHUB_ACCEL</h2>
-<div class="item"><span class="label">hosts</span>$(ok_fail $V_GH)</div>
-<div class="item"><span class="label">dns guardian</span>$(ok_fail $V_DNS)</div>
-<div class="item"><span class="label">github ip</span><span class="value">${GH_IP:-?}</span></div>
-</div>
-
-<div class="card">
-<h2><span class="dim">&gt;</span>ANIMATION</h2>
-<div class="item"><span class="label">window</span><span class="value">${ANIM_WIN:-?}x</span></div>
-<div class="item"><span class="label">transition</span><span class="value">${ANIM_TRANS:-?}x</span></div>
-<div class="item"><span class="label">duration</span><span class="value">${ANIM_DUR:-?}x</span></div>
-</div>
-
-<div class="card">
-<h2><span class="dim">&gt;</span>BATTERY</h2>
-<div class="item"><span class="label">level</span><span class="value big">${CAP:-?}%</span></div>
-<div class="item"><span class="label">current</span><span class="value">${CUR_SHOW}</span></div>
-<div class="item"><span class="label">temp</span><span class="value">${BATT_TEMP} °C</span></div>
-<div class="item"><span class="label">health</span><span class="value">${BATT_HEALTH}</span></div>
-<div class="item"><span class="label">status</span><span class="value">${BATT_STATUS}</span></div>
-</div>
-
-<footer>
-<span class="dim">──</span> snapshot @ $(date "+%H:%M:%S") <span class="dim">──</span>
-</footer>
-
+cat << FOOT
+  <footer>
+    <span class="p">--</span> v$VER · snapshot $(date '+%m-%d %H:%M') <span class="p">--</span>
+  </footer>
+  <footer class="note">
+    状态为开机快照。点模块卡片「操作」按钮刷新后再回来看。
+  </footer>
 </div>
 </body>
 </html>
-HTMLEOF
+FOOT
+} > "$TMP" 2>/dev/null
 
-mv "$TMP" "$OUT"
+mv "$TMP" "$OUT" 2>/dev/null
 chmod 644 "$OUT" 2>/dev/null
+rm -f "$KV" 2>/dev/null
 
 exit 0

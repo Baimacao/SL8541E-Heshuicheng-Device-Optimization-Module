@@ -1,7 +1,8 @@
-/* ═══════════════════════════════════════
+/* ═══════════════════════════════════════════════════════════════
  * SL8541E 优化模块 WebUI · 极客风
- * 兼容 WebView 80 / 圆屏 480×480
- * ═══════════════════════════════════════ */
+ * v1.3：状态区改成 KEY/VALUE 紧凑列表（.row/.k/.v）
+ * 兼容 WebView 80（Chrome 80）/ 圆屏 480×480
+ * ═══════════════════════════════════════════════════════════════ */
 
 * {
     box-sizing: border-box;
@@ -15,17 +16,14 @@
     --bg-panel: #0d1117;
     --bg-code: #060910;
     --border: #21262d;
-    --border-hi: #30363d;
     --fg: #c9d1d9;
     --fg-dim: #6e7681;
     --fg-low: #484f58;
     --green: #3fb950;
-    --green-hi: #56d364;
     --cyan: #56d4dd;
     --blue: #58a6ff;
     --yellow: #d29922;
     --red: #f85149;
-    --magenta: #bc8cff;
 }
 
 html, body {
@@ -36,22 +34,12 @@ html, body {
     line-height: 1.55;
 }
 
-body {
-    padding: 72px 0;
-    min-height: 100vh;
-}
+body { padding: 72px 0; min-height: 100vh; }
 
-#app {
-    max-width: 400px;
-    margin: 0 auto;
-    padding: 0 12px;
-}
+#app { max-width: 400px; margin: 0 auto; padding: 0 12px; }
 
 /* ─── Header ─── */
-header {
-    text-align: center;
-    padding: 0 0 16px;
-}
+header { text-align: center; padding: 0 0 14px; }
 
 .logo {
     color: var(--green);
@@ -60,22 +48,19 @@ header {
     white-space: pre;
     display: inline-block;
     text-align: left;
-    margin-bottom: 8px;
+    margin-bottom: 6px;
     text-shadow: 0 0 4px rgba(63, 185, 80, 0.4);
 }
 
-.meta {
-    color: var(--fg-dim);
-    font-size: 11px;
-}
+.meta { color: var(--fg-dim); font-size: 11px; }
+.prompt { color: var(--green); margin-right: 4px; }
+#version { color: var(--cyan); }
 
-.prompt {
-    color: var(--green);
-    margin-right: 4px;
-}
-
-#version {
-    color: var(--cyan);
+.tagline {
+    margin-top: 6px;
+    color: var(--fg-low);
+    font-size: 10px;
+    letter-spacing: 1px;
 }
 
 /* ─── Tabs ─── */
@@ -100,18 +85,10 @@ header {
     transition: color 0.15s ease, border-color 0.15s ease;
 }
 
-.tab-btn.active {
-    color: var(--green);
-    border-bottom-color: var(--green);
-}
+.tab-btn.active { color: var(--green); border-bottom-color: var(--green); }
 
-.tab-panel {
-    display: none;
-}
-
-.tab-panel.active {
-    display: block;
-}
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
 
 /* ─── Hint ─── */
 .hint {
@@ -124,9 +101,7 @@ header {
     margin-bottom: 10px;
 }
 
-.hint .dim {
-    color: var(--yellow);
-}
+.hint .dim { color: var(--yellow); }
 
 /* ─── iframe ─── */
 #status-frame {
@@ -154,17 +129,43 @@ header {
     text-transform: uppercase;
 }
 
-.card h2 .icon {
-    display: inline-block;
-    margin-right: 6px;
+.card h2 .dim { color: var(--fg-dim); margin-right: 4px; }
+
+/* ─── 状态页行（gen_status.sh 输出）─── */
+.row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 3px 0;
+    font-size: 12px;
+    border-bottom: 1px dashed #161b22;
 }
 
-.card h2 .dim {
+.row:last-child { border-bottom: none; }
+
+.row .k {
     color: var(--fg-dim);
-    margin-right: 4px;
+    flex-shrink: 0;
+    padding-right: 8px;
 }
 
-/* ─── Item ─── */
+.row .k::before { content: "· "; color: var(--fg-low); }
+
+.row .v {
+    color: var(--fg);
+    font-weight: 500;
+    text-align: right;
+    word-break: break-all;
+}
+
+.row .v.ok { color: var(--green); font-weight: 600; }
+.row .v.ng { color: var(--red); font-weight: 600; }
+.row .v.dim { color: var(--fg-dim); font-weight: 400; }
+
+/* 状态页里的 > 前缀（与卡片标题同色） */
+.card h2 .p { color: var(--fg-dim); margin-right: 4px; }
+
+/* ─── About 卡片 ─── */
 .item {
     display: flex;
     justify-content: space-between;
@@ -174,20 +175,10 @@ header {
     border-bottom: 1px dashed #161b22;
 }
 
-.item:last-child {
-    border-bottom: none;
-}
+.item:last-child { border-bottom: none; }
 
-.item .label {
-    color: var(--fg-dim);
-    flex-shrink: 0;
-    padding-right: 8px;
-}
-
-.item .label::before {
-    content: "· ";
-    color: var(--fg-low);
-}
+.item .label { color: var(--fg-dim); flex-shrink: 0; padding-right: 8px; }
+.item .label::before { content: "· "; color: var(--fg-low); }
 
 .item .value {
     color: var(--fg);
@@ -196,22 +187,10 @@ header {
     word-break: break-all;
 }
 
-.item .value a {
-    color: var(--blue);
-    text-decoration: none;
-}
-
-.item .value.ok {
-    color: var(--green);
-}
-
-.item .value.fail {
-    color: var(--red);
-}
-
-.item .value.warn {
-    color: var(--yellow);
-}
+.item .value a { color: var(--blue); text-decoration: none; }
+.item .value.ok { color: var(--green); }
+.item .value.fail { color: var(--red); }
+.item .value.warn { color: var(--yellow); }
 
 .item .value.big {
     font-size: 16px;
@@ -220,13 +199,8 @@ header {
     text-shadow: 0 0 6px rgba(63, 185, 80, 0.3);
 }
 
-/* ─── 状态 ─── */
-.loading {
-    text-align: center;
-    color: var(--fg-dim);
-    padding: 48px 0;
-    font-size: 12px;
-}
+/* ─── 状态提示 ─── */
+.loading { text-align: center; color: var(--fg-dim); padding: 48px 0; font-size: 12px; }
 
 .error {
     background: #1f0a0d;
@@ -239,9 +213,7 @@ header {
     line-height: 1.6;
 }
 
-.hidden {
-    display: none !important;
-}
+.hidden { display: none !important; }
 
 /* ═══════════════════════════════════════
  * FAQ
@@ -263,9 +235,7 @@ header {
     outline: none;
 }
 
-.faq summary::-webkit-details-marker {
-    display: none;
-}
+.faq summary::-webkit-details-marker { display: none; }
 
 .faq summary::after {
     content: '+';
@@ -278,21 +248,9 @@ header {
     font-weight: 600;
 }
 
-.faq[open] summary::after {
-    content: '−';
-    color: var(--yellow);
-}
-
-.faq[open] summary {
-    color: var(--green);
-    border-bottom: 1px solid var(--border);
-}
-
-.faq .brk {
-    color: var(--yellow);
-    font-weight: 600;
-    margin-right: 6px;
-}
+.faq[open] summary::after { content: '−'; color: var(--yellow); }
+.faq[open] summary { color: var(--green); border-bottom: 1px solid var(--border); }
+.faq .brk { color: var(--yellow); font-weight: 600; margin-right: 6px; }
 
 .faq-body {
     padding: 10px 12px 12px;
@@ -301,9 +259,7 @@ header {
     line-height: 1.7;
 }
 
-.faq-body p {
-    margin-bottom: 4px;
-}
+.faq-body p { margin-bottom: 4px; }
 
 .faq-body code {
     display: inline-block;
@@ -317,20 +273,9 @@ header {
     word-break: break-all;
 }
 
-.faq-body b {
-    color: var(--fg);
-    font-weight: 600;
-}
-
-.faq-body a {
-    color: var(--blue);
-    text-decoration: none;
-}
-
-.faq-body .dim {
-    color: var(--fg-low);
-    margin-right: 4px;
-}
+.faq-body b { color: var(--fg); font-weight: 600; }
+.faq-body a { color: var(--blue); text-decoration: none; }
+.faq-body .dim { color: var(--fg-low); margin-right: 4px; }
 
 /* ═══════════════════════════════════════
  * About
@@ -341,25 +286,11 @@ header {
     color: var(--fg-dim);
 }
 
-.about-card .about-desc p {
-    margin-bottom: 2px;
-}
+.about-card .about-desc p { margin-bottom: 2px; }
+.about-card .about-desc .dim { color: var(--green); margin-right: 4px; }
+.about-card .about-desc a { color: var(--blue); text-decoration: none; word-break: break-all; }
 
-.about-card .about-desc .dim {
-    color: var(--green);
-    margin-right: 4px;
-}
-
-.about-card .about-desc a {
-    color: var(--blue);
-    text-decoration: none;
-    word-break: break-all;
-}
-
-.about-card.signature {
-    text-align: center;
-    border-left: 3px solid var(--green);
-}
+.about-card.signature { text-align: center; border-left: 3px solid var(--green); }
 
 .sig-art {
     color: var(--green);
@@ -370,17 +301,8 @@ header {
     text-shadow: 0 0 4px rgba(63, 185, 80, 0.4);
 }
 
-.about-card.signature p {
-    color: var(--fg);
-    font-size: 12px;
-    margin-bottom: 4px;
-}
-
-.about-card.signature .muted {
-    color: var(--fg-dim);
-    font-size: 11px;
-    margin-top: 8px;
-}
+.about-card.signature p { color: var(--fg); font-size: 12px; margin-bottom: 4px; }
+.about-card.signature .muted { color: var(--fg-dim); font-size: 11px; margin-top: 8px; }
 
 /* ─── Footer ─── */
 footer {
@@ -391,6 +313,6 @@ footer {
     letter-spacing: 0.5px;
 }
 
-footer .dim {
-    color: var(--fg-low);
-}
+footer .dim { color: var(--fg-low); }
+footer .p { color: var(--fg-low); }
+footer.note { padding: 0 0 12px; color: var(--fg-low); font-size: 10px; letter-spacing: 0; }

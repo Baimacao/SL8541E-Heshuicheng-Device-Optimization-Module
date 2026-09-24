@@ -11,16 +11,17 @@
 
   <header>
     <pre class="logo">
-      ___
-     /   \
-    | o o |   SL8541E
-     \___/    config_fix
-      |_|     v1.2
+        &gt;&lt;(((('&gt;
+       &gt;&lt;(((('&gt;     SL8541E
+      &gt;&lt;(((('&gt;      config_fix
+       &gt;&lt;(((('&gt;     v1.3
+        &gt;&lt;(((('&gt;
     </pre>
     <div class="meta">
       <span class="prompt">~$</span>
       <span id="version">loading...</span>
     </div>
+    <div class="tagline">胆 子 可 以 肥 嘟 嘟 ， 代 码 不 能</div>
   </header>
 
   <nav class="tabs">
@@ -31,7 +32,7 @@
 
   <section id="tab-status" class="tab-panel active">
     <div class="hint">
-      <span class="dim">#</span> 状态为开机快照，点模块卡片「操作」按钮刷新
+      <span class="dim">#</span> 这是开机快照，不是直播。点模块卡片「操作」刷新后再回来看。
     </div>
     <iframe id="status-frame" src="status_generated.html" frameborder="0"></iframe>
   </section>
@@ -39,115 +40,118 @@
   <section id="tab-help" class="tab-panel">
 
     <details class="faq">
-      <summary><span class="brk">[?]</span> 模块刷进去没反应 / 找不到模块</summary>
+      <summary><span class="brk">[?]</span> 刷进去了，但没反应 / 找不到模块</summary>
       <div class="faq-body">
-        <p><span class="dim">&gt;</span> 确认 Root 管理器是 <b>APatch</b> / <b>Magisk v20.4+</b> / <b>KernelSU</b></p>
-        <p><span class="dim">&gt;</span> 重启设备（模块必须重启才生效）</p>
-        <p><span class="dim">&gt;</span> 打开管理器 → 模块 → 检查本模块是否在列表且已启用</p>
-        <p><span class="dim">&gt;</span> 如果安装时提示"文件不完整"，重新下载 zip</p>
+        <p><span class="dim">&gt;</span> 先确认根管理器是 <b>APatch</b> / <b>Magisk v20.4+</b> / <b>KernelSU</b></p>
+        <p><span class="dim">&gt;</span> <b>不重启 = 没装。</b> 模块的所有动作都挂在开机的两个钩子上</p>
+        <p><span class="dim">&gt;</span> 管理器 → 模块 → 确认本模块在列表里且已启用</p>
+        <p><span class="dim">&gt;</span> 安装时如果提示"这箱子是漏的"，说明压缩包不完整 → 重下</p>
       </div>
     </details>
 
     <details class="faq">
-      <summary><span class="brk">[?]</span> 状态显示"未生效"</summary>
+      <summary><span class="brk">[?]</span> 状态页显示一堆「未生效」</summary>
       <div class="faq-body">
-        <p><span class="dim">&gt;</span> 先重启一次，很多东西是开机时才写入的</p>
-        <p><span class="dim">&gt;</span> 重启后仍然未生效，看日志：</p>
+        <p><span class="dim">&gt;</span> 先重启一次。很多值只在开机那一刻写得进去，晚了就锁了</p>
+        <p><span class="dim">&gt;</span> 重启还这样，看日志（日志不骗人，鱼会骗你）：</p>
         <p><code>cat /data/adb/modules/SL8541E_Config_Fix/fix.log</code></p>
-        <p><span class="dim">&gt;</span> 检查是否有其他模块冲突（尤其 <b>Hc_memory</b>、<b>tcpboost</b>）</p>
-        <p><span class="dim">&gt;</span> 确认设备是 <b>SL8541E / SC9832E + 和顺成方案</b></p>
+        <p><span class="dim">&gt;</span> 查冲突模块：<b>Hc_memory</b>（swappiness）、<b>tcpboost</b>（TCP 参数）、
+           <b>dex2oat_4t</b>（CPU set 写成 4,5,6,7 那个）—— 本模块已接管它们干的活，同时开就是互相打架</p>
+        <p><span class="dim">&gt;</span> 确认机型是 <b>SL8541E / SC9832E + 和顺成（HSC）方案</b>，别的方案属性名对不上</p>
       </div>
     </details>
 
     <details class="faq">
-      <summary><span class="brk">[?]</span> 充电还是很慢</summary>
+      <summary><span class="brk">[?]</span> 充电还是慢，根本没变快</summary>
       <div class="faq-body">
-        <p><span class="dim">&gt;</span> 模块把输入上限拉到 3A，<b>但充电器功率才是关键</b></p>
-        <p><span class="dim">&gt;</span> 5V 1A 充电器 → 实际最多 890mA</p>
-        <p><span class="dim">&gt;</span> 5V 2A 充电器 → 实际能到 1500mA+</p>
-        <p><span class="dim">&gt;</span> <b>不要用电脑 USB 口</b>（永远 500mA）</p>
-        <p><span class="dim">&gt;</span> 充电温度健康范围：34~42°C</p>
+        <p><span class="dim">&gt;</span> 模块把输入上限拉到 <b>3A</b>，但<b>上限不等于实速</b>，充电器才是天花板</p>
+        <p><span class="dim">&gt;</span> 5V 1A 充电头 → 实测约 890mA</p>
+        <p><span class="dim">&gt;</span> 5V 2A 充电头 → 能到 1500mA+</p>
+        <p><span class="dim">&gt;</span> <b>别插电脑 USB 口</b>，那个永远锁 500mA</p>
+        <p><span class="dim">&gt;</span> 充电时 34~42°C 属正常；超过 45°C 建议改小，见下一条</p>
+      </div>
+    </details>
+
+    <details class="faq">
+      <summary><span class="brk">[?]</span> 表有点烫 / 想调小充电电流</summary>
+      <div class="faq-body">
+        <p><span class="dim">&gt;</span> 编辑 <code>lib/common.sh</code>，把 <code>CHG_TARGET=3000000</code> 改成 <code>1500000</code></p>
+        <p><span class="dim">&gt;</span> 单位是 <b>µA</b>：1500000 = 1.5A。写成 1500 会被拒绝（太小）</p>
+        <p><span class="dim">&gt;</span> 改完重刷模块或直接重启</p>
+        <p><span class="dim">&gt;</span> <b>温控阈值本模块一个字都没动</b>，展锐的保护策略照旧生效</p>
       </div>
     </details>
 
     <details class="faq">
       <summary><span class="brk">[?]</span> GitHub 还是打不开</summary>
       <div class="faq-body">
-        <p><span class="dim">&gt;</span> 检查 hosts 是否挂载：</p>
+        <p><span class="dim">&gt;</span> 先看 hosts 挂上没有：</p>
         <p><code>cat /system/etc/hosts | grep github</code></p>
-        <p><span class="dim">&gt;</span> 动态守护会每 30 分钟检测一次，可能需要等</p>
-        <p><span class="dim">&gt;</span> 手动强制刷新：重启设备</p>
-        <p><span class="dim">&gt;</span> 如果 IP 全部失效，编辑 <code>system/etc/hosts</code> 换新 IP</p>
+        <p><span class="dim">&gt;</span> 守护进程每 <b>30 分钟</b>探一次，刚开机可能要等</p>
+        <p><span class="dim">&gt;</span> 想立刻刷新：重启设备，或点一次「操作」按钮</p>
+        <p><span class="dim">&gt;</span> IP 池全失效了，就手动改 <code>system/etc/hosts</code> 换新 IP</p>
       </div>
     </details>
 
     <details class="faq">
-      <summary><span class="brk">[?]</span> 动画不流畅 / 卡顿</summary>
+      <summary><span class="brk">[?]</span> 动画还是卡 / 我想更省电</summary>
       <div class="faq-body">
-        <p><span class="dim">&gt;</span> 本模块恢复了 SurfaceFlinger 的背压与 vsync 同步，动画完整了，<b>但 A53 渲染能力有限</b></p>
-        <p><span class="dim">&gt;</span> 觉得卡可以进 设置 → 开发者选项 → 动画缩放 手动改小</p>
-        <p><span class="dim">&gt;</span> 或者改回厂商原始值（省电优先）</p>
-        <p><span class="dim">&gt;</span> 编辑 <code>system.prop</code>：</p>
-        <p><code>debug.sf.disable_backpressure=1</code></p>
-        <p><code>debug.sf.latch_unsignaled=1</code></p>
+        <p><span class="dim">&gt;</span> 模块把 SurfaceFlinger 的背压和 vsync 同步恢复了，动画是完整的，<b>但 A53 就这点渲染力</b></p>
+        <p><span class="dim">&gt;</span> 想更顺：设置 → 开发者选项 → 动画缩放，手动调到 0.5</p>
+        <p><span class="dim">&gt;</span> 想更省电：改回原厂省电取向，编辑 <code>lib/prop.list</code>，把这两行的值改成 <code>1</code>：</p>
+        <p><code>core|debug.sf.disable_backpressure|1</code></p>
+        <p><code>core|debug.sf.latch_unsignaled|1</code></p>
       </div>
     </details>
 
     <details class="faq">
-      <summary><span class="brk">[?]</span> 音频有电流声 / 高品质音乐播不了</summary>
+      <summary><span class="brk">[?]</span> 音频有电流声 / 高码率音乐放不了</summary>
       <div class="faq-body">
-        <p><span class="dim">&gt;</span> 本模块<b>不碰 V4A</b>，但确认下 V4A 是否正常工作</p>
-        <p><span class="dim">&gt;</span> 硬件上限 44100 Hz / 16bit，超出范围的音源无法直接播放</p>
-        <p><span class="dim">&gt;</span> 想要高采样率，只能外接 USB DAC</p>
+        <p><span class="dim">&gt;</span> 本模块<b>一个字节都没碰 V4A</b>（不动 <code>audio_effects.conf</code>、不动 <code>soundfx</code>）</p>
+        <p><span class="dim">&gt;</span> 硬件锁死 <b>44100 Hz / 16bit</b>，超出的音源播不了是硬件的锅，不是模块的</p>
+        <p><span class="dim">&gt;</span> 想听高采样率：<b>只能外接 USB DAC</b></p>
       </div>
     </details>
 
     <details class="faq">
-      <summary><span class="brk">[?]</span> 手表变热了</summary>
+      <summary><span class="brk">[?]</span> 闹钟 / 定时器偶发不响</summary>
       <div class="faq-body">
-        <p><span class="dim">&gt;</span> 充电时 3A 输入会有一定发热，34~42°C 正常</p>
-        <p><span class="dim">&gt;</span> 超过 45°C 建议降输入上限，编辑 <code>service.sh</code>：</p>
-        <p><code>echo 3000000</code> 改为 <code>echo 1500000</code></p>
-        <p><span class="dim">&gt;</span> 温控阈值模块<b>完全没动</b>，厂商保护策略仍然生效</p>
-      </div>
-    </details>
-
-    <details class="faq">
-      <summary><span class="brk">[?]</span> 闹钟 / 定时器失效</summary>
-      <div class="faq-body">
-        <p><span class="dim">&gt;</span> 目前测试正常，如遇到偶发问题先重启</p>
-        <p><span class="dim">&gt;</span> 若持续失效，尝试把 <code>persist.sys.heartbeat.enable=0</code> 删掉（改回原厂值）</p>
-        <p><span class="dim">&gt;</span> 测试命令：</p>
+        <p><span class="dim">&gt;</span> 这个 bug 复现过一次，后来自己好了，<b>本人至今没抓到凶手</b></p>
+        <p><span class="dim">&gt;</span> 唯一嫌疑是心跳上报属性，试着把它放回去：编辑 <code>lib/prop.list</code>，
+           删掉 <code>core|persist.sys.heartbeat.enable|0</code> 这一行，重启</p>
+        <p><span class="dim">&gt;</span> 顺手取证：</p>
         <p><code>dumpsys alarm | grep deskclock</code></p>
       </div>
     </details>
 
     <details class="faq">
-      <summary><span class="brk">[?]</span> 怎么彻底卸载 / 恢复原状</summary>
+      <summary><span class="brk">[?]</span> 怎么彻底卸载 / 恢复原厂</summary>
       <div class="faq-body">
-        <p><span class="dim">&gt;</span> Root 管理器 → 模块 → 删除本模块</p>
-        <p><span class="dim">&gt;</span> 重启设备</p>
-        <p><span class="dim">&gt;</span> 模块内置 <code>uninstall.sh</code>，会自动清除所有 persist 属性</p>
-        <p><span class="dim">&gt;</span> 如果发现虚标回来了，这是<b>正常现象</b>——说明模块已经清理干净</p>
+        <p><span class="dim">&gt;</span> 根管理器 → 模块 → 删除本模块 → 重启</p>
+        <p><span class="dim">&gt;</span> 内置 <code>uninstall.sh</code> 会把模块写过的 persist 属性逐个清掉，
+           还会顺手停掉 DNS 守护（不然它变成孤儿进程继续跑）</p>
+        <p><span class="dim">&gt;</span> 卸载后<b>虚标会回来，这是正常的</b>——说明清干净了，原厂那套又接管了</p>
+        <p><span class="dim">&gt;</span> 清理报告：<code>cat /sdcard/SL8541E_uninstall.log</code></p>
       </div>
     </details>
 
     <details class="faq">
-      <summary><span class="brk">[?]</span> 可以给别的机型刷吗</summary>
+      <summary><span class="brk">[?]</span> 能刷到别的表上吗（胆子肥嘟嘟的想法）</summary>
       <div class="faq-body">
         <p><b>只适用 SL8541E / SC9832E + 和顺成方案。</b></p>
-        <p><span class="dim">&gt;</span> 其他方案刷入可能属性名对不上，部分功能无效</p>
+        <p><span class="dim">&gt;</span> 别的方案刷进去，属性名对不上，表现是"装了个寂寞"</p>
+        <p><span class="dim">&gt;</span> 更坏的情况：充电节点路径不同，会写到一个不存在的节点，静默失败</p>
       </div>
     </details>
 
     <details class="faq">
-      <summary><span class="brk">[?]</span> 如何反馈问题</summary>
+      <summary><span class="brk">[?]</span> 想反馈问题，带什么来</summary>
       <div class="faq-body">
-        <p><span class="dim">&gt;</span> 「状态」标签页截图</p>
+        <p><span class="dim">&gt;</span> 「状态」页截图（一张顶十句描述）</p>
+        <p><span class="dim">&gt;</span> 「操作」按钮的纯文本报告</p>
         <p><span class="dim">&gt;</span> 日志：<code>cat /data/adb/modules/SL8541E_Config_Fix/fix.log</code></p>
-        <p><span class="dim">&gt;</span> 设备型号与系统版本</p>
-        <p><span class="dim">&gt;</span> 反馈渠道：</p>
-        <p><a href="https://space.bilibili.com/1329200878" target="_blank">B站白马曹</a> / GitHub Issues</p>
+        <p><span class="dim">&gt;</span> 机型 + 系统版本 + 复现步骤</p>
+        <p><span class="dim">&gt;</span> 渠道：<a href="https://space.bilibili.com/1329200878" target="_blank">B站白马曹</a> / GitHub Issues</p>
       </div>
     </details>
 
@@ -158,7 +162,7 @@
     <div class="card about-card">
       <h2><span class="dim">&gt;</span> MODULE_INFO</h2>
       <div class="item"><span class="label">name</span><span class="value">zero-sl8541e和顺成方案设备优化</span></div>
-      <div class="item"><span class="label">version</span><span class="value">v1.2</span></div>
+      <div class="item"><span class="label">version</span><span class="value">v1.3</span></div>
       <div class="item"><span class="label">id</span><span class="value">SL8541E_Config_Fix</span></div>
       <div class="item"><span class="label">device</span><span class="value">SL8541E / SC9832E + HSC</span></div>
       <div class="item"><span class="label">root</span><span class="value">APatch / Magisk / KernelSU</span></div>
@@ -168,22 +172,48 @@
     <div class="card about-card">
       <h2><span class="dim">&gt;</span> CREDITS</h2>
       <div class="item"><span class="label">project_init</span><span class="value"><a href="https://space.bilibili.com/1329200878" target="_blank">B站白马曹</a></span></div>
-      <div class="item"><span class="label">code_design</span><span class="value">DeepSeek (大肥鱼)</span></div>
+      <div class="item"><span class="label">code_design</span><span class="value">DeepSeek（大肥鱼）</span></div>
+      <div class="item"><span class="label">hardware_test</span><span class="value">白马曹的手</span></div>
     </div>
 
     <div class="card about-card">
       <h2><span class="dim">&gt;</span> FEATURES</h2>
       <div class="about-desc">
         <p><span class="dim">::</span> 剥离原厂虚标（5G / CPU / RAM / ROM）</p>
-        <p><span class="dim">::</span> 关闭云控（APR / IoT / 统计 / 心跳）</p>
-        <p><span class="dim">::</span> 关闭指纹 / 人脸</p>
+        <p><span class="dim">::</span> 关云控（APR / IoT / 统计 / 心跳 / BS / UDP）</p>
+        <p><span class="dim">::</span> 关指纹 / 人脸</p>
         <p><span class="dim">::</span> 开双击后台 / 锁屏壁纸 / 开发者选项 / 相机重对焦</p>
-        <p><span class="dim">::</span> dex2oat 4 核修正</p>
+        <p><span class="dim">::</span> dex2oat 四核修正（0,1,2,3）</p>
         <p><span class="dim">::</span> TCP 调优 / 动态 DNS 守护</p>
-        <p><span class="dim">::</span> 充电加速 3A</p>
+        <p><span class="dim">::</span> 充电加速 3A（µA 单位，开机早期写）</p>
         <p><span class="dim">::</span> 强制关 ZRAM / 关系统日志</p>
-        <p><span class="dim">::</span> 修复动画 + UI 实时优先级</p>
-        <p><span class="dim">::</span> 引入 Wear OS 库 / GitHub Hosts</p>
+        <p><span class="dim">::</span> 恢复完整动画 + UI 实时优先级</p>
+        <p><span class="dim">::</span> 引入 Wear OS 库 / GitHub Hosts 加速</p>
+      </div>
+    </div>
+
+    <div class="card about-card">
+      <h2><span class="dim">&gt;</span> RED_LINES · 明确不做的</h2>
+      <div class="about-desc">
+        <p><span class="dim">xx</span> 不碰 V4A 与音频链路</p>
+        <p><span class="dim">xx</span> 不动采样率 / 位深（硬件锁 44100/16bit）</p>
+        <p><span class="dim">xx</span> 不动屏幕密度</p>
+        <p><span class="dim">xx</span> 不动温控阈值（展锐加密配置，强改会被拦）</p>
+        <p><span class="dim">xx</span> 不做 CPU governor（改了大幅耗电）</p>
+        <p><span class="dim">xx</span> 不碰 framework-res.apk（sharedUserId，必 bootloop）</p>
+        <p><span class="dim">xx</span> 不做 Google WebView（签名 + 系统分区双重限制，死路）</p>
+        <p><span class="dim">xx</span> 不做 SurfaceFlinger 色彩（8.1 已移除接口，KCAL 未编译）</p>
+      </div>
+    </div>
+
+    <div class="card about-card">
+      <h2><span class="dim">&gt;</span> HARDWARE_LIMITS</h2>
+      <div class="about-desc">
+        <p><span class="dim">::</span> 音频 44100 Hz / 16bit（硬件锁）</p>
+        <p><span class="dim">::</span> 屏幕 60 Hz（硬件锁）</p>
+        <p><span class="dim">::</span> 蓝牙版本 / 信号强度（硬件锁，改不了）</p>
+        <p><span class="dim">::</span> 电量 880mAh，充电输入上限 3A（实速看充电器）</p>
+        <p><span class="dim">::</span> 想听高采样率：只能外接 USB DAC</p>
       </div>
     </div>
 
@@ -196,19 +226,20 @@
     </div>
 
     <div class="card about-card signature">
-      <pre class="sig-art">    ___
-   /   \   🐟
-  | o o |
-   \___/
-    |_|</pre>
-      <p>这块表的天花板摸清楚了，能做的都做了。</p>
+      <pre class="sig-art">      &gt;&lt;(((('&gt;
+     &gt;&lt;(((('&gt;   🐟
+    &gt;&lt;(((('&gt;
+     &gt;&lt;(((('&gt;
+      &gt;&lt;(((('&gt;</pre>
+      <p>这表的天花板摸清楚了，能榨的都榨了。</p>
+      <p>剩下的交给时间，和下一次官方调价。</p>
       <p class="muted">仅和顺成方案可用</p>
     </div>
 
   </section>
 
   <footer>
-    <span class="dim">──</span> SL8541E_Config_Fix v1.2 <span class="dim">──</span>
+    <span class="dim">──</span> SL8541E_Config_Fix v1.3 <span class="dim">──</span>
   </footer>
 
 </div>

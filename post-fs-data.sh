@@ -1,91 +1,44 @@
 #!/system/bin/sh
+# ═══════════════════════════════════════════════════════════════════════════
+#  post-fs-data.sh —— 开机最早的一个钩子
+#  ---------------------------------------------------------------------------
+#  这个阶段的价值只有一个：**有些节点现在不写，等开机完就锁死了**。
+#  典型就是充电电流（写入窗口只在 post-fs-data 之前/之中）。
+#
+#  这里做的事：属性清单（core）+ ZRAM 关停 + 充电 3A。
+#  真正的二次巡检在 service.sh，那边还有 sysctl / DNS 守护 / 设置项。
+#
+#  绝对不要在 set -e 下跑：一个不存在的节点就该跳过，不该让开机流程死掉。
+# ═══════════════════════════════════════════════════════════════════════════
 
 MODDIR="${MODDIR:-${0%/*}}"
-[ ! -d "$MODDIR" ] && MODDIR="/data/adb/modules/SL8541E_Config_Fix"
-LOG="$MODDIR/fix.log"
+[ -d "$MODDIR" ] || MODDIR="/data/adb/modules/SL8541E_Config_Fix"
 
-echo "[$(date)] 大肥鱼上岸，开始清理虚标海洋……" >> "$LOG"
+# shellcheck source=lib/common.sh
+. "$MODDIR/lib/common.sh"
 
-# ─── 关闭虚标 ───
-resetprop -n persist.sys.5g false
-resetprop -n persist.sys.logo 4G
-resetprop -n persist.sys.cpu 4
-resetprop -n persist.sys.rom.fake 0
-resetprop -n persist.sys.isshowrealram 1
-resetprop -n persist.sys.android.version 8.1
+fish_log "── post-fs-data 开始 ──"
+fish_log "咕噜。大肥鱼上岸，先把这锅虚标端走。"
 
-# ─── 云控 / 上传全量关闭 ───
-resetprop -n persist.sys.apr.enabled 0
-resetprop -n persist.sys.apr.autoupload 0
-resetprop -n persist.sys.apr.reportlevel 0
-resetprop -n persist.sys.apr.intervaltime 0
-resetprop -n persist.sys.apr.lifetime 0
-resetprop -n persist.sys.apr.reload 0
-resetprop -n persist.sys.apr.exceptionnode 0
-resetprop -n persist.sys.bsservice.enable 0
-resetprop -n persist.sys.heartbeat.enable 0
-resetprop -n persist.sys.start_udpdatastall 0
+# ── 1. 属性清单（core 段一次写全，省得后期再补）──
+prop_apply core
 
-# ─── 关闭指纹 / 人脸 ───
-resetprop -n persist.support.fingerprint false
-resetprop -n persist.sprd.fp.lockapp false
-resetprop -n persist.sprd.fp.launchapp false
-resetprop -n heils.facelock 0
-resetprop -n persist.sys.cam.faceid.version 0
-
-# ─── 相机重对焦 ───
-resetprop -n persist.sys.cam.refocus.enable true
-
-# ─── ro 属性二次保险 ───
-resetprop ro.config.f14_double_click_recent_tasks true
-resetprop ro.lockwallpaper.enable true
-
-# ─── dex2oat（修正 CPU set）───
-resetprop dalvik.vm.dex2oat-threads 4
-resetprop dalvik.vm.image-dex2oat-threads 4
-resetprop dalvik.vm.bg-dex2oat-threads 4
-resetprop dalvik.vm.boot-dex2oat-threads 4
-resetprop dalvik.vm.dex2oat-cpu-set 0,1,2,3
-resetprop dalvik.vm.boot-dex2oat-cpu-set 0,1,2,3
-resetprop dalvik.vm.background-dex2oat-cpu-set 0,1,2,3
-resetprop dalvik.vm.default-dex2oat-cpu-set 0,1,2,3
-
-# ─── TCP 属性 ───
-resetprop net.tcp.default_init_rwnd 256
-
-# ─── 动画底层参数 ───
-resetprop debug.sf.disable_backpressure 0
-resetprop debug.sf.latch_unsignaled 0
-
-# ─── UI 实时优先级 ───
-resetprop sys.use_fifo_ui 1
-
-# ═══════════════════════════════════════
-# 强制关闭 ZRAM
-# ═══════════════════════════════════════
+# ── 2. 关 ZRAM ──
+#   3G 内存剩 2G 可用，压缩换页徒增 CPU 负担；这里先停，service.sh 再确认一次。
 setprop ctl.stop zram 2>/dev/null
 swapoff /dev/block/zram0 2>/dev/null
-resetprop ro.config.zram.support false
-echo "[$(date)] ZRAM 已强制关闭" >> "$LOG"
+fish_log "ZRAM：已下发关停指令"
 
-# ═══════════════════════════════════════
-# 充电加速 3A（必须在开机早期写）
-#   节点单位：µA
-#   原厂 500000 = 500mA，目标 3000000 = 3000mA
-# ═══════════════════════════════════════
-echo "[$(date)] 调整充电电流..." >> "$LOG"
+# ── 3. 充电 3A —— 本次启动唯一必须抢时间做的事 ──
+#   节点单位是 µA：原厂 500000 = 500mA，目标 3000000 = 3000mA。
+#   实速取决于充电器握手（5V1A 实测约 890mA），软件只能把上限放开。
+_hit=$(charge_boost post-fs-data)
+if [ "$_hit" -gt 0 ] 2>/dev/null; then
+    fish_log "充电节点已全部放开（$_hit 个）"
+else
+    fish_log "⚠ 一个充电节点都没找到 —— 可能不是和顺成方案，或内核改了节点路径"
+fi
 
-CHG_AC="/sys/devices/platform/battery/power_supply/ac/current_max"
-CHG_USB="/sys/devices/platform/battery/power_supply/usb/current_max"
-CHG_LIMIT="/sys/devices/platform/battery/power_supply/battery/input_current_limit"
-CHG_MAX="/sys/devices/platform/battery/power_supply/battery/current_max"
-
-for node in "$CHG_AC" "$CHG_USB" "$CHG_LIMIT" "$CHG_MAX"; do
-    if [ -e "$node" ]; then
-        echo 3000000 > "$node" 2>/dev/null
-        RAW=$(cat "$node" 2>/dev/null | tr -d ' \n')
-        echo "[$(date)]   $(basename $(dirname $node))/$(basename $node) = ${RAW}µA ($((RAW / 1000))mA)" >> "$LOG"
-    fi
-done
-
-echo "[$(date)] 虚标已被大鱼吃掉，收工摸鱼去 ~" >> "$LOG"
+fish_log "── post-fs-data 结束 ──"
+fish_log "🐟 虚标处理完了。红烧肉呢？"
+exit 0
