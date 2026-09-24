@@ -21,14 +21,19 @@
 # ═══════════════════════════════════════════════════════════════════════════
 
 # ── 模块目录：优先用根管理器提供的 MODDIR/MODPATH，再退回脚本自身位置 ──
-if [ -z "$MODDIR" ]; then
-    if [ -n "$MODPATH" ]; then
-        MODDIR="$MODPATH"
-    elif [ -n "$0" ]; then
-        MODDIR="${0%/*}"
-    fi
+# 全程用 ${VAR:-} 取值：本文件可能被开了 set -u 的调用方 source，
+# 那时访问未定义变量会直接让脚本退出（离线测试就这么被咬过一次）。
+MODDIR="${MODDIR:-}"
+MODPATH="${MODPATH:-}"
+if [ -z "$MODDIR" ] && [ -n "$MODPATH" ]; then
+    MODDIR="$MODPATH"
 fi
-[ -d "$MODDIR" ] || MODDIR="/data/adb/modules/SL8541E_Config_Fix"
+if [ -z "$MODDIR" ] && [ -n "${0:-}" ]; then
+    case "$0" in
+        /*) MODDIR="${0%/*}" ;;      # 绝对路径才敢剥目录，否则会得到奇怪的相对路径
+    esac
+fi
+[ -n "$MODDIR" ] && [ -d "$MODDIR" ] || MODDIR="/data/adb/modules/SL8541E_Config_Fix"
 
 LIB="$MODDIR/lib"
 PROP_LIST="$LIB/prop.list"
