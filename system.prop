@@ -47,7 +47,7 @@ ro.config.f14_double_click_recent_tasks=true
 ro.lockwallpaper.enable=true
 
 # ═══════════════════════════════════════
-# 接管 dex2oat_4t（修正 CPU set）
+# dex2oat 4 核修正
 # ═══════════════════════════════════════
 dalvik.vm.dex2oat-threads=4
 dalvik.vm.image-dex2oat-threads=4
@@ -59,17 +59,17 @@ dalvik.vm.background-dex2oat-cpu-set=0,1,2,3
 dalvik.vm.default-dex2oat-cpu-set=0,1,2,3
 
 # ═══════════════════════════════════════
-# 接管 tcpboost（属性层）
+# TCP 属性
 # ═══════════════════════════════════════
 net.tcp.default_init_rwnd=256
 
 # ═══════════════════════════════════════
-# 音频：重采样质量提升
+# 音频重采样
 # ═══════════════════════════════════════
 af.resampler.quality=4
 
 # ═══════════════════════════════════════
-# 关闭系统日志（减少 I/O 与后台唤醒）
+# 关闭系统日志
 # ═══════════════════════════════════════
 persist.logd.logpersistd=OFF
 persist.logd.size=64K
@@ -86,8 +86,13 @@ ro.config.zram.support=false
 
 # ═══════════════════════════════════════
 # 修复动画跳帧
-#   原厂设 1（省电降延迟），代价是动画缺失
-#   改回 0 恢复完整动画
 # ═══════════════════════════════════════
 debug.sf.disable_backpressure=0
 debug.sf.latch_unsignaled=0
+
+# ═══════════════════════════════════════
+# ⭐ UI 实时优先级
+#   让 UI / RenderThread 用 SCHED_FIFO，
+#   防止弱 CPU 错过 vsync 导致掉帧
+# ═══════════════════════════════════════
+sys.use_fifo_ui=1

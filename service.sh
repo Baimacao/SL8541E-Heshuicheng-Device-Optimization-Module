@@ -4,7 +4,6 @@ MODDIR="${MODDIR:-${0%/*}}"
 [ ! -d "$MODDIR" ] && MODDIR="/data/adb/modules/SL8541E_Config_Fix"
 LOG="$MODDIR/fix.log"
 
-# ─── 等待系统启动完成 ───
 i=0
 while [ "$(getprop sys.boot_completed)" != "1" ] && [ $i -lt 60 ]; do
     sleep 2
@@ -36,7 +35,6 @@ resetprop -n persist.sys.cam.refocus.enable true
 resetprop ro.config.f14_double_click_recent_tasks true
 resetprop ro.lockwallpaper.enable true
 
-# dex2oat 二次保险
 resetprop dalvik.vm.dex2oat-threads 4
 resetprop dalvik.vm.image-dex2oat-threads 4
 resetprop dalvik.vm.bg-dex2oat-threads 4
@@ -46,15 +44,16 @@ resetprop dalvik.vm.boot-dex2oat-cpu-set 0,1,2,3
 resetprop dalvik.vm.background-dex2oat-cpu-set 0,1,2,3
 resetprop dalvik.vm.default-dex2oat-cpu-set 0,1,2,3
 
-# TCP 属性
 resetprop net.tcp.default_init_rwnd 256
 
-# 动画底层参数
 resetprop debug.sf.disable_backpressure 0
 resetprop debug.sf.latch_unsignaled 0
 
+# ⭐ UI 实时优先级
+resetprop sys.use_fifo_ui 1
+
 # ═══════════════════════════════════════
-# 接管 tcpboost（内核层 sysctl）
+# 接管 tcpboost
 # ═══════════════════════════════════════
 echo 8388608 > /proc/sys/net/core/rmem_max 2>/dev/null
 echo 8388608 > /proc/sys/net/core/wmem_max 2>/dev/null
@@ -80,7 +79,7 @@ else
 fi
 
 # ═══════════════════════════════════════
-# 充电加速 3000mA
+# 充电加速 3A（二次保险）
 # ═══════════════════════════════════════
 echo "[$(date)] 调整充电电流..." >> "$LOG"
 
@@ -91,8 +90,9 @@ CHG_MAX="/sys/devices/platform/battery/power_supply/battery/current_max"
 
 for node in "$CHG_AC" "$CHG_USB" "$CHG_LIMIT" "$CHG_MAX"; do
     if [ -e "$node" ]; then
-        echo 3000 > "$node" 2>/dev/null
-        echo "[$(date)]   $(basename $(dirname $node))/$(basename $node) = $(cat $node 2>/dev/null)" >> "$LOG"
+        echo 3000000 > "$node" 2>/dev/null
+        RAW=$(cat "$node" 2>/dev/null | tr -d ' \n')
+        echo "[$(date)]   $(basename $(dirname $node))/$(basename $node) = ${RAW}µA ($((RAW / 1000))mA)" >> "$LOG"
     fi
 done
 
@@ -103,7 +103,7 @@ echo 150 > /proc/sys/vm/swappiness 2>/dev/null
 echo noop > /sys/block/mmcblk0/queue/scheduler 2>/dev/null
 
 # ═══════════════════════════════════════
-# 动态 DNS 守护进程
+# 动态 DNS 守护
 # ═══════════════════════════════════════
 IP_POOL="20.205.243.166 20.205.243.168 20.27.177.113 20.200.245.247 140.82.112.4"
 MOD_HOSTS="$MODDIR/system/etc/hosts"
@@ -209,5 +209,11 @@ W=$(cmd_read settings get global window_animation_scale)
 T=$(cmd_read settings get global transition_animation_scale)
 A=$(cmd_read settings get global animator_duration_scale)
 echo "[$(date)] 动画值: 窗口=$W 过渡=$T 时长=$A" >> "$LOG"
+
+# ═══════════════════════════════════════
+# 生成 WebUI 状态页
+# ═══════════════════════════════════════
+[ -f "$MODDIR/webroot/gen_status.sh" ] && sh "$MODDIR/webroot/gen_status.sh"
+echo "[$(date)] WebUI 状态页已生成" >> "$LOG"
 
 echo "[$(date)] 全部搞定，大肥鱼表示可以摸鱼了 ~" >> "$LOG"

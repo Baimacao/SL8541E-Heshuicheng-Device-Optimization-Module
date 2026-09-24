@@ -4,6 +4,11 @@ MODDIR="${MODDIR:-${0%/*}}"
 [ ! -d "$MODDIR" ] && MODDIR="/data/adb/modules/SL8541E_Config_Fix"
 
 # ═══════════════════════════════════════
+# 先刷新 WebUI 状态页
+# ═══════════════════════════════════════
+[ -f "$MODDIR/webroot/gen_status.sh" ] && sh "$MODDIR/webroot/gen_status.sh" 2>/dev/null
+
+# ═══════════════════════════════════════
 # 震动反馈
 # ═══════════════════════════════════════
 vibrate() {
@@ -32,9 +37,6 @@ chk() {
     fi
 }
 
-# ═══════════════════════════════════════
-# Settings 读值（内存优先，XML 兜底）
-# ═══════════════════════════════════════
 SETTINGS_XMLS="
 /data/system/users/0/settings_global.xml
 /data/system/settings_global.xml
@@ -80,9 +82,6 @@ chk_anim() {
 DEV=$(sget development_settings_enabled)
 [ "$DEV" = "1" ] && S_DEV="已生效 ✓" || S_DEV="未生效 ✗ (值=${DEV:-空})"
 
-# ═══════════════════════════════════════
-# 电池信息
-# ═══════════════════════════════════════
 BATT_DIRS="/sys/class/power_supply/battery /sys/class/power_supply/sprdbattery /sys/class/power_supply/BAT0"
 
 find_node() {
@@ -157,9 +156,6 @@ TMP_RAW=$((TMP / 10))
 WARN=""
 [ "$TMP_RAW" -gt 45 ] 2>/dev/null && WARN="  ⚠ 温度偏高，建议歇一会儿"
 
-# ═══════════════════════════════════════
-# 输出
-# ═══════════════════════════════════════
 echo "【优化模块 · 状态检测】"
 echo "🐟 大肥鱼上线……咕噜咕噜"
 echo "   (˘ω˘) 女仆装已穿戴，开始扫描"
@@ -213,6 +209,26 @@ if [ -n "$MEM_TOTAL" ] && [ -n "$MEM_AVAIL" ]; then
 fi
 
 echo "──────────────────"
+echo "🤖 Android Go："
+GO_MODE=$(getprop ro.config.low_ram)
+[ "$GO_MODE" = "true" ] && echo "  低内存模式：   已启用 ✓" || echo "  低内存模式：   未启用"
+GO_THRESHOLD=$(getprop ro.config.low_ram.threshold_gb)
+[ -z "$GO_THRESHOLD" ] && GO_THRESHOLD="未设置"
+echo "  内存阈值：     ${GO_THRESHOLD}"
+if [ -n "$MEM_TOTAL" ]; then
+    TOT_MB=$((MEM_TOTAL / 1024))
+    if [ "$TOT_MB" -lt 2048 ] 2>/dev/null && [ "$GO_MODE" != "true" ]; then
+        echo "  建议：         内存 < 2GB，可考虑 Go 模式"
+    elif [ "$GO_MODE" = "true" ]; then
+        echo "  说明：         系统运行在 Go 模式"
+    else
+        echo "  说明：         内存充裕，无需 Go 模式"
+    fi
+fi
+LMK_HEAVY=$(getprop ro.lmk.kill_heaviest_task)
+[ -n "$LMK_HEAVY" ] && echo "  LMK 杀重任务： $LMK_HEAVY"
+
+echo "──────────────────"
 echo "⚡ 充电与内存："
 if grep -q zram /proc/swaps 2>/dev/null; then
     echo "  ZRAM：        仍开启 ✗"
@@ -224,17 +240,20 @@ CHG_LIMIT="/sys/devices/platform/battery/power_supply/battery/input_current_limi
 CHG_AC="/sys/devices/platform/battery/power_supply/ac/current_max"
 
 if [ -e "$CHG_LIMIT" ]; then
-    VAL=$(cat "$CHG_LIMIT" 2>/dev/null | tr -d " \n")
-    [ -n "$VAL" ] && echo "  input_limit： ${VAL} mA"
+    RAW=$(cat "$CHG_LIMIT" 2>/dev/null | tr -d " \n")
+    [ -n "$RAW" ] && echo "  input_limit： $((RAW / 1000)) mA"
 fi
 if [ -e "$CHG_AC" ]; then
-    VAL=$(cat "$CHG_AC" 2>/dev/null | tr -d " \n")
-    [ -n "$VAL" ] && echo "  ac_max：      ${VAL} mA"
+    RAW=$(cat "$CHG_AC" 2>/dev/null | tr -d " \n")
+    [ -n "$RAW" ] && echo "  ac_max：      $((RAW / 1000)) mA"
 fi
+
 echo "──────────────────"
 echo "🎬 动画底层参数："
 echo "  sf 背压：      $(chk debug.sf.disable_backpressure 0)"
 echo "  sf 同步：      $(chk debug.sf.latch_unsignaled 0)"
+echo "  UI FIFO：      $(chk sys.use_fifo_ui 1)"
+
 echo "──────────────────"
 echo "Wear OS 库："
 WEAR_OK=1
@@ -260,6 +279,7 @@ else
     echo "  系统识别：     未见 feature/library"
 fi
 [ "$WEAR_OK" = "1" ] && echo "  总体状态：     全部就绪 ✓" || echo "  总体状态：     有缺失 ✗"
+
 echo "──────────────────"
 echo "GitHub 加速："
 if [ -f /system/etc/hosts ]; then
@@ -268,8 +288,6 @@ if [ -f /system/etc/hosts ]; then
         GH_IP=$(echo "$GH_LINE" | tr -s ' ' | cut -d' ' -f1)
         echo "  hosts 文件：   已挂载 ✓"
         echo "  github.com：  $GH_IP"
-        RAW_CNT=$(grep -c "raw.githubusercontent.com" /system/etc/hosts 2>/dev/null)
-        echo "  raw 条目：    $RAW_CNT 条"
     else
         echo "  hosts 文件：   已挂载但无 GitHub 条目 ✗"
     fi
@@ -281,11 +299,13 @@ if pgrep -f "ping -c 1 -w 2 github" >/dev/null 2>&1; then
 else
     echo "  动态DNS守护：  未运行 ✗"
 fi
+
 echo "──────────────────"
 echo "动画修复："
 echo "  窗口 0.75：    $(chk_anim window_animation_scale 0.75)"
 echo "  过渡 0.75：    $(chk_anim transition_animation_scale 0.75)"
 echo "  时长 0.5：     $(chk_anim animator_duration_scale 0.5)"
+
 echo "──────────────────"
 echo "🔋 电池状态"
 echo "  电量：  ${CAP:-未知}%"
@@ -294,7 +314,8 @@ echo "  电流：  $(fmt_current "$CUR")"
 echo "  温度：  $(fmt_temp "$TMP")$WARN"
 echo "  健康：  $(tr_health "$HLT")"
 echo "  状态：  $(tr_status "$STS")"
+
 echo "──────────────────"
 echo "🐟 扫描完毕，大肥鱼表示很满意"
-echo "   (￣▽￣)ノ 本鱼干活，用户放心"
+echo "   WebUI 状态页已刷新，可切过去查看"
 echo "仅和顺成方案可用"

@@ -2,7 +2,7 @@
 
 English | [中文](README.md)
 
-Made by [Bili-baimacao](https://space.bilibili.com/1329200878) and DeepSeek ("Big Fatty Fish").
+Made by [Bili-bamacao](https://space.bilibili.com/1329200878) and DeepSeek ("Big Fatty Fish").
 
 For **Unisoc SL8541E / SC9832E + Heshuicheng (HSC) smartwatches**, Android 8.1.
 
@@ -10,7 +10,7 @@ Compatible with **Magisk / APatch / KernelSU**.
 
 ## Background
 
-The stock `build.prop` contains fake specs:
+The stock `build.prop` was full of fake specs:
 
 ```properties
 ram.set32g=8GB        # actual: 3GB
@@ -19,165 +19,101 @@ persist.sys.5g=true   # no 5G hardware
 persist.sys.cpu=10    # 4 cores reported as 10
 ```
 
-Also includes APR, IoT, and telemetry reporting.
+Plus a full telemetry suite (APR / IoT / statistics / heartbeat).
 
-Official fix requires factory reset. This module provides an alternative and disables telemetry.
+Official fix requires factory reset. This module provides an alternative and disables the telemetry at the same time.
 
-Features
+## v1.2 Changes
 
-Fakery Removal
+- **UI real-time priority**: `sys.use_fifo_ui=1` for smoother UI on weak CPUs
+- **WebUI**: in-module status page, troubleshooting, about
+- **Charging 3A**: corrected the unit issue (µA, not mA)
+- **RRO fix** (optional): corrected power_profile.xml for accurate battery stats
 
-Item Original Current
-5G icon true false
-CPU display 10 4
-RAM display 8GB 3GB
-Storage display 128G 32G
+## Features
 
-Telemetry Shutdown
+### Fakery Removal
 
-APR, heartbeat, BS service, statistics, IoT, UDP data collection, sales service registration.
+| Item | Original | Current |
+|---|---|---|
+| 5G icon | true | false |
+| CPU display | 10 | 4 |
+| RAM display | 8GB | 3GB |
+| Storage display | 128G | 32G |
 
-Biometric Shutdown
+### Telemetry Shutdown
+
+APR suite, heartbeat, BS service, statistics, IoT, UDP collection, sales service registration.
+
+### Biometric Shutdown
 
 Fingerprint (master, app lock, app launch, Soter payment), face unlock.
 
-Features Enabled
+### Features Enabled
 
 Camera refocus, double-tap recents, lock-screen wallpaper, developer options, eye-care mode, fast charging, hall camera, raise-to-wake.
 
-Performance & Network
+### Performance & Network
 
-· dex2oat 4-core fix (CPU set 4,5,6,7 → 0,1,2,3)
-· TCP buffer, fast open, TIME_WAIT reuse, low-latency
-· Congestion algorithm stays cubic (no BBR in this kernel)
+- **dex2oat 4-core fix**: CPU set from wrong `4,5,6,7` to `0,1,2,3`
+- TCP buffers, fast open, TIME_WAIT reuse, low-latency
+- Congestion algorithm `cubic` (no BBR in this kernel)
+- Dynamic DNS guardian for GitHub access
 
-Audio
+### Audio
 
-· Resampler quality af.resampler.quality=4
-· V4A-safe: does not touch audio_effects.conf, soundfx, or any V4A files
+- Resampler quality `af.resampler.quality=4`
+- **V4A-safe**: does not touch `audio_effects.conf`, `soundfx`, or any V4A files
 
-Kernel
+### Kernel
 
-· I/O scheduler noop (this kernel has no deadline)
-· swappiness stays at stock 150
+- I/O scheduler `noop` (kernel has no `deadline`)
+- swappiness stays at stock `150`
+- Force-disable ZRAM
+- Disable system logging (shrink logd buffers)
 
-Environment
+### Charging
 
-· Wear OS libraries (wearable.jar + wear-service.jar + permission XML)
-· GitHub Hosts acceleration
+- Input limit raised from 500mA to 3000mA (3A)
+- Node unit is **µA**, writes `3000000`
+- Must write early at boot (`post-fs-data`), otherwise the node is locked
+- **Actual speed depends on charger and cable**
 
-Maintenance
+### Animation Fix
 
-· Boot-time battery stats cleanup
-· Two-step animation fix (window 0.75 / transition 0.75 / duration 0.5)
+- Restore SurfaceFlinger backpressure and vsync sync (`debug.sf.*` back to 0)
+- Fix vendor's power-saving-induced frame skipping
+- Animation scales 0.75 / 0.75 / 0.5
 
-Hardware Limits
+### WebUI
 
-Output Device Sample Rate Bit Depth
-Speaker 44100 16bit
-Wired Headset 44100 16bit
-BT A2DP 44100 16bit
-USB DAC Dynamic Dynamic
+Round-screen adapted status page with three tabs:
 
-Sample rate/bit depth are hardware-locked. Only a USB DAC can raise them. Same for Bluetooth version and signal strength.
+- **Status**: live state of every feature
+- **Help**: self-service fixes for 11 common issues
+- **About**: module info, credits, links
 
-File Structure
+**Note**: status is a boot-time snapshot. Tap the module card's "Action" button to refresh.
 
-```
-SL8541E_Config_Fix/
-├── module.prop
-├── system.prop
-├── post-fs-data.sh
-├── service.sh
-├── action.sh
-├── customize.sh
-├── system/
-│   ├── etc/
-│   │   ├── hosts
-│   │   └── permissions/com.google.android.wearable.xml
-│   └── framework/
-│       ├── com.google.android.wearable.jar
-│       └── wear-service.jar
-└── META-INF/com/google/android/
-    ├── update-binary
-    └── updater-script
-```
+### Environment
 
-Installation
+- Wear OS libraries (`wearable.jar` + `wear-service.jar` + permission XML)
+- GitHub Hosts acceleration (with dynamic guardian)
 
-1. Download SL8541E_Config_Fix_v1.0.zip
-2. Root manager → Modules → Install from storage
-3. Reboot
-4. Tap "Action" on the module card to verify
+### Maintenance
 
-Prerequisites: Rooted, Bootloader unlocked, system backed up.
+- Boot-time battery stats cleanup
+- Auto-clear all persist properties on uninstall
 
-Verification
+## Hardware Limits
 
-```bash
-su
+| Output Device | Sample Rate | Bit Depth |
+|---|---|---|
+| Speaker | 44100 | 16bit |
+| Wired Headset | 44100 | 16bit |
+| BT A2DP | 44100 | 16bit |
+| USB DAC | Dynamic | Dynamic |
 
-# Property layer
-getprop persist.sys.5g              # false
-getprop persist.sys.cpu             # 4
-getprop dalvik.vm.dex2oat-cpu-set   # 0,1,2,3
-getprop af.resampler.quality        # 4
+Sample rate / bit depth / Bluetooth version / signal strength — all hardware-locked. **Only a USB DAC can raise the sample rate.**
 
-# Kernel layer
-cat /proc/sys/vm/swappiness         # 150
-cat /sys/block/mmcblk0/queue/scheduler  # 【noop】
-cat /proc/sys/net/core/rmem_max     # 8388608
-
-# Settings layer
-settings get global window_animation_scale  # 0.75
-```
-
-Or tap "Action" for a full readout.
-
-FAQ
-
-Q: Is 3GB RAM real?
-A: Yes. 8GB was faked.
-
-Q: Conflicts with V4A?
-A: No. Module doesn't touch V4A files.
-
-Q: Can I get 96k/24bit audio?
-A: No. Hardware locked at 44100/16bit. USB DAC only.
-
-Q: Battery life worse?
-A: Module doesn't touch CPU frequency or governor.
-
-Q: Can it brick the device?
-A: Only changes properties, settings, sysctl, and injects files. Still, back up first.
-
-Q: How to revert?
-A: Remove module + reboot. To clear persist overrides: resetprop --delete persist.sys.5g etc.
-
-Compatibility
-
-Item Notes
-Works on SL8541E / SC9832E + Heshuicheng
-Not for Other vendors
-Doesn't touch Screen density, Bluetooth version, signal strength
-Skipped zram (not needed in practice)
-
-Feedback
-
-Issues should include: full Action output, fix.log, device model and OS version, reproduction steps.
-
-Credits
-
-· Bili-baimacao — Project initiator, hardware testing
-· DeepSeek ("Big Fatty Fish") — Code authoring, solution design
-
-License
-
-MIT License
-
----
-
-🐟 Big Fatty Fish
-The watch's ceiling is mapped. Everything that can be done, is done.
-
-```
+## File Structure

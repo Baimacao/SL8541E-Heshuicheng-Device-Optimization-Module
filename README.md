@@ -2,182 +2,120 @@
 
 [English](README-EN.md) | 中文
 
-由 [B站白马曹](https://space.bilibili.com/1329200878) 与 DeepSeek（大肥鱼）共同制作的系统优化模块。
+由 [B站白马曹](https://space.bilibili.com/1329200878) 与 DeepSeek（大肥鱼）共同制作。
 
-适用于 **展锐 SL8541E / SC9832E + 和顺成（HSC）方案手表**，Android 8.1。
+面向 **展锐 SL8541E / SC9832E + 和顺成（HSC）方案手表**，Android 8.1。
 
 兼容 **Magisk / APatch / KernelSU**。
 
 ## 起因
 
-原厂 `build.prop` 存在大量虚标：
+原厂 `build.prop` 里塞了一堆虚标：
 
 ```properties
 ram.set32g=8GB        # 实际 3GB
 rom.set32g=128G       # 实际 32GB
-persist.sys.5g=true   # 无 5G 硬件
-persist.sys.cpu=10    # 4 核标 10 核
+persist.sys.5g=true   # 没有 5G 硬件
+persist.sys.cpu=10    # 四核标十核
 ```
 
-同时有 APR、IoT、统计等后台回传。
+同时还有一整套静默回传（APR / IoT / 统计 / 心跳）。
 
-官方修正虚标需要恢复出厂设置，本模块提供不恢复出厂的替代方案，并关闭云控。
+官方修正虚标的方式是恢复出厂设置，所有数据全清。本模块提供不恢复出厂的替代方案，顺手把云控也关了。
 
-功能
+## v1.2 主要更新
 
-虚标剥离
+- **UI 实时优先级**：`sys.use_fifo_ui=1`，让 UI / RenderThread 用 SCHED_FIFO 防掉帧
+- **WebUI**：模块卡片点开即可查看状态、排查常见问题、看模块信息
+- **充电 3A**：修正了之前充电节点的单位问题（µA 而非 mA）
+- **RRO 修正**（可选）：power_profile.xml 修正，让耗电排行数据准确
 
-项目 原值 现值
-5G 图标 true false
-CPU 显示 10 4
-内存显示 8GB 3GB
-存储显示 128G 32G
+## 功能清单
 
-云控关闭
+### 虚标剥离
+
+| 项目 | 原值 | 现值 |
+|---|---|---|
+| 5G 图标 | true | false |
+| CPU 显示 | 10 | 4 |
+| 内存显示 | 8GB | 3GB |
+| 存储显示 | 128G | 32G |
+
+### 云控关闭
 
 APR 全系、心跳、BS 服务、统计、IoT、UDP 数据收集、销售服务注册。
 
-生物识别关闭
+### 生物识别关闭
 
 指纹（总开关、锁应用、启动应用、Soter 支付）、人脸解锁。
 
-功能开启
+### 功能开启
 
 相机重对焦、双击最近任务、锁屏壁纸、开发者选项、护眼模式、快充提示、霍尔相机、抬腕唤醒。
 
-性能与网络
+### 性能与网络
 
-· dex2oat 4 核修正（CPU set 4,5,6,7 → 0,1,2,3）
-· TCP 缓冲区、fast open、TIME_WAIT 复用、低延迟模式
-· 拥塞算法保持 cubic（本内核无 BBR）
+- **dex2oat 4 核修正**：CPU set 从错误的 `4,5,6,7` 改为 `0,1,2,3`
+- TCP 缓冲区、fast open、TIME_WAIT 复用、低延迟模式
+- 拥塞算法 `cubic`（本内核无 BBR）
+- 动态 DNS 守护：GitHub 不通时自动切换 IP
 
-音频
+### 音频
 
-· 重采样质量 af.resampler.quality=4
-· 不碰 V4A：不动 audio_effects.conf、soundfx 目录、V4A 任何文件
+- 重采样质量 `af.resampler.quality=4`
+- **不碰 V4A**：不动 `audio_effects.conf`、`soundfx` 目录、V4A 任何文件
 
-内核
+### 内核
 
-· I/O 调度 noop（本内核不支持 deadline）
-· swappiness 保持原厂 150
+- I/O 调度 `noop`（本内核不支持 `deadline`）
+- swappiness 保持原厂 `150`
+- 强制关闭 ZRAM
+- 关闭系统日志（缩小 logd 缓冲区）
 
-环境
+### 充电加速
 
-· Wear OS 库引入（wearable.jar + wear-service.jar + 权限 XML）
-· GitHub Hosts 加速
+- 输入限制从 500mA 提升到 3000mA（3A）
+- 节点单位是 **µA**，写入值为 `3000000`
+- 必须在 boot 早期写入（`post-fs-data` 阶段），否则节点锁定写不进去
+- **实际充电速度取决于充电器和线材**
 
-维护
+### 动画修复
 
-· 开机清理电池校正文件
-· 动画两步修复（窗口 0.75 / 过渡 0.75 / 时长 0.5）
+- 恢复 SurfaceFlinger 背压与 vsync 同步（`debug.sf.*` 从 1 改回 0）
+- 修复原厂为省电导致的动画跳帧
+- 动画缩放 0.75 / 0.75 / 0.5
 
-硬件上限
+### WebUI
 
-输出设备 采样率 位深
-Speaker 44100 16bit
-有线耳机 44100 16bit
-蓝牙 A2DP 44100 16bit
-USB DAC 动态 动态
+圆屏适配的状态页面，三个 Tab：
 
-采样率/位深由硬件决定，只能通过 USB DAC 提升。蓝牙版本、信号强度同理，改不了。
+- **状态**：所有功能项的实时状态
+- **排查**：11 个常见问题的自助解决步骤
+- **关于**：模块信息、作者、链接
 
-文件结构
+**注意**：状态是开机快照。点模块卡片的「操作」按钮可刷新。
 
-```
-SL8541E_Config_Fix/
-├── module.prop
-├── system.prop
-├── post-fs-data.sh
-├── service.sh
-├── action.sh
-├── customize.sh
-├── system/
-│   ├── etc/
-│   │   ├── hosts
-│   │   └── permissions/com.google.android.wearable.xml
-│   └── framework/
-│       ├── com.google.android.wearable.jar
-│       └── wear-service.jar
-└── META-INF/com/google/android/
-    ├── update-binary
-    └── updater-script
-```
+### 环境
 
-安装
+- Wear OS 库引入（`wearable.jar` + `wear-service.jar` + 权限 XML）
+- GitHub Hosts 加速（含动态守护）
 
-1. 下载 SL8541E_Config_Fix_v1.0.zip
-2. Root 管理器 → 模块 → 从本地安装
-3. 重启
-4. 点模块卡片「操作」按钮验证
+### 维护
 
-前置：已 Root、Bootloader 已解锁、已备份系统。
+- 开机清理电池校正文件
+- 卸载时自动清除所有 persist 属性
 
-验证
+## 硬件上限
 
-```bash
-su
+| 输出设备 | 采样率 | 位深 |
+|---|---|---|
+| Speaker | 44100 | 16bit |
+| 有线耳机 | 44100 | 16bit |
+| 蓝牙 A2DP | 44100 | 16bit |
+| USB DAC | 动态 | 动态 |
 
-# 属性层
-getprop persist.sys.5g              # false
-getprop persist.sys.cpu             # 4
-getprop dalvik.vm.dex2oat-cpu-set   # 0,1,2,3
-getprop af.resampler.quality        # 4
+采样率 / 位深 / 蓝牙版本 / 信号强度，全部由硬件锁定，**改不了**。
 
-# 内核层
-cat /proc/sys/vm/swappiness         # 150
-cat /sys/block/mmcblk0/queue/scheduler  # 【noop】
-cat /proc/sys/net/core/rmem_max     # 8388608
+想听高采样率，**只能外接 USB DAC**。
 
-# 设置层
-settings get global window_animation_scale  # 0.75
-```
-
-或直接点「操作」按钮一次性查看。
-
-常见问题
-
-Q: 内存显示 3GB 是真的吗？
-A: 是。8GB 是原厂虚标。
-
-Q: 装了 V4A 会冲突吗？
-A: 不会。模块不碰 V4A 任何文件。
-
-Q: 采样率能提到 96k/24bit 吗？
-A: 不能。硬件锁 44100/16bit，只能 USB DAC。
-
-Q: 续航变差？
-A: 模块不涉及 CPU 频率与 governor，理论无影响。
-
-Q: 会变砖吗？
-A: 只改属性、设置、sysctl、注入文件，不改分区。但仍建议备份。
-
-Q: 怎么恢复原状？
-A: 删除模块 + 重启。如需清除 persist 覆盖：resetprop --delete persist.sys.5g 等。
-
-适用与限制
-
-项 说明
-适用 SL8541E / SC9832E + 和顺成方案
-不适用 其他方案
-不改 屏幕密度、蓝牙版本、信号强度
-不做 zram（实测不需要）
-
-反馈
-
-Issue 请附：操作按钮完整输出、fix.log、设备型号与系统版本、复现步骤。
-
-致谢
-
-· B站白马曹 —— 项目发起、硬件测试
-· DeepSeek（大肥鱼） —— 代码撰写、方案设计
-
-许可
-
-MIT License
-
----
-
-🐟 大肥鱼
-这块表的天花板摸清楚了，能做的都做了。
-
-```
+## 文件结构

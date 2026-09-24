@@ -53,9 +53,12 @@ resetprop dalvik.vm.default-dex2oat-cpu-set 0,1,2,3
 # ─── TCP 属性 ───
 resetprop net.tcp.default_init_rwnd 256
 
-# ─── 动画底层参数（恢复完整动画）───
+# ─── 动画底层参数 ───
 resetprop debug.sf.disable_backpressure 0
 resetprop debug.sf.latch_unsignaled 0
+
+# ─── UI 实时优先级 ───
+resetprop sys.use_fifo_ui 1
 
 # ═══════════════════════════════════════
 # 强制关闭 ZRAM
@@ -66,21 +69,23 @@ resetprop ro.config.zram.support false
 echo "[$(date)] ZRAM 已强制关闭" >> "$LOG"
 
 # ═══════════════════════════════════════
-# 清理电池校正文件
+# 充电加速 3A（必须在开机早期写）
+#   节点单位：µA
+#   原厂 500000 = 500mA，目标 3000000 = 3000mA
 # ═══════════════════════════════════════
-CLEANED=0
-for f in \
-    /data/system/batterystats.bin \
-    /data/system/batterystats.bin.bak \
-    /data/system/battery_stats.bin \
-    /data/system/batterystats.bin.tmp; do
-    [ -f "$f" ] && rm -f "$f" && CLEANED=$((CLEANED+1))
-done
+echo "[$(date)] 调整充电电流..." >> "$LOG"
 
-if [ "$CLEANED" -gt 0 ]; then
-    echo "[$(date)] 电池旧账已清（$CLEANED 个文件），重新做人" >> "$LOG"
-else
-    echo "[$(date)] 电池校正文件本来就不在，无账可清" >> "$LOG"
-fi
+CHG_AC="/sys/devices/platform/battery/power_supply/ac/current_max"
+CHG_USB="/sys/devices/platform/battery/power_supply/usb/current_max"
+CHG_LIMIT="/sys/devices/platform/battery/power_supply/battery/input_current_limit"
+CHG_MAX="/sys/devices/platform/battery/power_supply/battery/current_max"
+
+for node in "$CHG_AC" "$CHG_USB" "$CHG_LIMIT" "$CHG_MAX"; do
+    if [ -e "$node" ]; then
+        echo 3000000 > "$node" 2>/dev/null
+        RAW=$(cat "$node" 2>/dev/null | tr -d ' \n')
+        echo "[$(date)]   $(basename $(dirname $node))/$(basename $node) = ${RAW}µA ($((RAW / 1000))mA)" >> "$LOG"
+    fi
+done
 
 echo "[$(date)] 虚标已被大鱼吃掉，收工摸鱼去 ~" >> "$LOG"
