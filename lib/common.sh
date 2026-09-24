@@ -464,4 +464,55 @@ module_install_apatch() {
     return 0
 }
 
+# ── 空文件夹清理 ─────────────────────────────────────────────────────────────
+# 手表存储小，一堆 App 卸载后留下一堆空目录，文件管理器里看着烦。
+#
+# 安全边界（宁可少删，不可多删）：
+#   · 只扫用户可见的共享存储，绝不碰 /data、/system、/vendor
+#   · 用 rmdir 而不是 rm -rf —— rmdir 只能删空目录，这是**内核层面的保证**，
+#     不存在"判断错了把有内容的目录删掉"的可能
+#   · 排除 .thumbnails / .trash / LOST.DIR 等系统缓存目录
+#   · 深度限制 3 层，避免长尾扫描拖慢开机
+#   · 从深到浅删，这样"里面只有一个空目录"的父目录也能被顺带清掉
+#   · 默认清这些目录；只加不删，想自定义就改 CLEAN_DIRS
+#   · 故意**不扫** /sdcard/Android/data：那是 App 私有目录，里面每个文件夹
+#     都对应一个 App，删掉可能让 App 重建或行为异常，收益不值这个风险
+CLEAN_DIRS="/sdcard/Download /sdcard/Documents /sdcard/Pictures /sdcard/Music /sdcard/Movies /sdcard/DCIM /sdcard/Bluetooth /sdcard/MIUI /sdcard/recordings /sdcard/ringtones /sdcard/alarms /sdcard/notifications /sdcard/podcasts"
+CLEAN_SKIP="Android data obb .thumbnails .trash LOST.DIR .nomedia"
+
+clean_empty_dirs() {
+    _removed=0
+    for _root in $CLEAN_DIRS; do
+        [ -d "$_root" ] || continue
+
+        # 1) 收集命中目录（含自身），从深到浅排序
+        #    注意 toybox 的 wc -c 输出可能带前导空格，所以要先把空格归一再 cut
+        _list=$(find "$_root" -maxdepth 3 -type d 2>/dev/null | \
+                while IFS= read -r _d; do
+                    [ "$_d" = "$_root" ] && continue
+                    echo "$(echo "$_d" | tr -cd '/' | wc -c) $_d"
+                done | tr -s ' ' | sort -rn | cut -d' ' -f2-)
+
+        # 2) 逐个尝试删空目录（从深到浅）
+        for _d in $_list; do
+            case "$_d" in
+                */Android/data/*) continue ;;   # App 私有目录一律不动
+            esac
+            _base=$(basename "$_d")
+            _skip=0
+            for _s in $CLEAN_SKIP; do
+                [ "$_base" = "$_s" ] && _skip=1
+            done
+            [ "$_skip" = "1" ] && continue
+
+            # rmdir 只在目录为空时成功 —— 这是安全性的根，不要换成 rm -rf
+            if rmdir "$_d" 2>/dev/null; then
+                _removed=$((_removed + 1))
+            fi
+        done
+    done
+    fish_log "空文件夹清理：删除 $_removed 个（仅空目录，用 rmdir 保证）"
+    echo "$_removed"
+}
+
 fish_log "lib/common.sh 已加载（resetprop=$HAS_RESETPROP）"

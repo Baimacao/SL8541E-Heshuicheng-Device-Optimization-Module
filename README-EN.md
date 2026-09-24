@@ -32,93 +32,87 @@ and it shuts the telemetry down on the way.
 
 ---
 
-## What's new in v1.5
+## What's new in v1.6
 
-No new features. **This release is a refactor.** Nothing was removed, half the duplicated
-code is gone.
+Three things this round: **animation restored to the original**, **the root manager's
+Update button now works**, and **empty folders get cleaned at boot**.
 
-### 1. Shared library extracted (the big one)
+### 1. Animation restored to v1.2 verbatim
 
-v1.2's problem: the same property block was written twice (`post-fs-data.sh` and
-`service.sh`), the charging block twice, and battery reading/formatting plus `chkv()`
-were copy-pasted three ways across `status.sh` / `gen_status.sh` / `action.sh`.
-Changing one value meant editing four files — and missing one meant "I changed it, why
-isn't it taking effect?"
+In v1.5 I added read-back verification, retries, and an XML fallback to the animation block.
+On the real device that made things *worse*, so it is now reverted to the original — nothing extra:
 
-Now:
-
+```sh
+# step 1: reset to 1.0
+settings put global window_animation_scale 1.0
+settings put global transition_animation_scale 1.0
+settings put global animator_duration_scale 1.0
+sleep 1
+# step 2: write the real values
+settings put global window_animation_scale 0.75
+settings put global transition_animation_scale 0.75
+settings put global animator_duration_scale 0.5
 ```
-lib/common.sh     property writes / battery reading+formatting / settings fallback / node parsing
-lib/prop.list     the property manifest (plain text table, single source of truth)
-lib/dns-guard.sh  GitHub dynamic DNS guardian (freed from a nested-quote shell string)
+
+> Lesson: this trick works because of **the two steps plus that one second**.
+> Inserting *anything* in between — even a read — can disturb the timing.
+>
+> It also has a precondition: it must run **after boot completes**. v1.3/v1.4 broke exactly
+> that by dropping the `wait_boot()` call (see the v1.5 entry in `changelog.md`).
+
+**New diagnostics**: the actual values are logged before and after the write, plus the raw
+`settings` output. Send those lines if it misbehaves and we can stop guessing.
+
+### 2. The root manager's Update button
+
+The update button on the module card is **not** the module's own WebUI button — it is provided
+by the root manager, which reads **`update.json`** at the repo root (Magisk spec; APatch and
+KernelSU both support it):
+
+```json
+{
+  "version": "v1.6",
+  "versionCode": 14,
+  "zipUrl": "https://github.com/.../releases/download/v1.6/SL8541E_Config_Fix_v1.6.zip",
+  "changelog": "https://raw.githubusercontent.com/.../main/changelog.md"
+}
 ```
 
-| | v1.2 | v1.3 |
+The manager compares versions, downloads, and installs by itself — **no shell bridge needed**
+(this watch's APatch fork has a hollow `ksu.exec`, so a WebUI button does nothing; this is the
+correct route).
+
+On every release `publish.py` verifies `update.json` against the tag, asset name and version,
+and HEADs the `zipUrl` to confirm it downloads. A mismatch fails the release instead of
+shipping a button that points at the wrong place.
+
+`lib/install.sh` (command-line updater) is still there; both routes coexist:
+
+| Route | Entry point | Notes |
 |---|---|---|
-| Places properties are defined | 3 | 1 (`lib/prop.list`) + `system.prop` |
-| Charging write blocks | 2 | 1 function |
-| Battery formatting functions | 3 | 1 |
-| Battery sysfs probing | 3 | 1 |
-| `chkv` helpers | 3 | 1 |
-| Total script lines | ~1070 | ~800 (with more features and more comments) |
+| **Root manager Update button** | module card | preferred, native ability |
+| Command line | `sh lib/install.sh install` | fallback, scriptable |
 
-### 2. Robustness fixes
+### 3. Empty-folder cleanup at boot
 
-| Problem | v1.2 | v1.3 |
-|---|---|---|
-| `resetprop` missing | all properties silently fail | falls back to `setprop`, logged |
-| Property writes | blind 40+ writes every boot | **read-then-write**; `persist.*` hits disk on every write |
-| Charging node parse | raw arithmetic on possibly-empty output | `node_int()` returns empty for non-numeric, callers check |
-| Negative/empty battery temp | could render `3.-5` | sign handled explicitly |
-| `service.sh` re-entry | settings written twice, two DNS guardians | `.run.lock` guard |
-| DNS guardian liveness | `pgrep` on the ping string (false negatives) | pidfile + `/proc/<pid>` check |
-| DNS guardian code | inline `nohup sh -c '...'` quote soup | standalone `lib/dns-guard.sh` |
-| Uninstall leftovers | properties only; guardian kept running | kills guardian, clears state |
-| Empty status values | blank rows (looks broken) | shows `—` |
-| Status iframe caching | browser served stale page | timestamped reload on tab switch |
-| Version string | hardcoded in 5 files | read from `module.prop` |
+Small storage, and uninstalled apps leave empty directories that clutter the file manager.
+Cleaned once at boot.
 
-### 3. Closed a v1.2 gap
+**Safety boundaries** (better to delete too little than too much):
 
-Four 
-o.* telemetry-related properties (`ro.hsc.statistics` / `ro.hsc.iot` /
-`add.salesservices.register` / `ro.soter.support`) plus `persist.logd.*` and
-`af.resampler.quality` were only written in `system.prop` in v1.2, **without ever going
-through `resetprop`** — if the system rewrote them, nothing re-applied them. They are now in`lib/prop.list` like everything else.
+| Measure | Why |
+|---|---|
+| `rmdir`, never `rm -rf` | `rmdir` only removes empty directories — a **kernel-level guarantee**, so there is no "oops, judged wrong and deleted real data" |
+| Shared storage only | never touches `/data`, `/system`, `/vendor` |
+| Skip list | `.thumbnails` / `.trash` / `LOST.DIR` / `.nomedia` / `Android` / `data` / `obb` |
+| `Android/data` is never scanned | app-private; deleting could make apps rebuild or misbehave — not worth the risk |
+| Depth limit 3 | avoids long tails slowing boot |
+| Deepest-first | so a parent whose only child was an empty dir gets cleaned too |
 
-> This is the only behavior change in this release, and it hardens the telemetry shutdown.
+Scope (edit `CLEAN_DIRS` in `lib/common.sh`): `Download` / `Documents` / `Pictures` / `Music` /
+`Movies` / `DCIM` / `Bluetooth` / `recordings` / `ringtones` / `alarms` / `notifications` / `podcasts`
 
-### 3b. Fixed a regression introduced in v1.3/v1.4 (important)
-
-**`service.sh` had lost its "wait for boot to complete" step.**
-
-v1.2 looped until `sys.boot_completed=1`, then slept 5s. While refactoring in v1.3 I moved
-that into a `wait_boot()` helper in `lib/common.sh` — and **forgot to call it** from the new
-`service.sh`.
-
-The consequence is not "a bit early", it is that **the entire animation block did nothing**:
-
-- `service.sh` runs as late_start, before boot completes;
-- at that point system_server has not finished initializing settings, so the animation scales
-  we write get overwritten by its own initialization;
-- the "two-step" trick (write 1.0, wait a second, then write the target) **depends entirely on
-  that ordering** — running early makes both steps pointless.
-
-No error, no trace: the status page just says "not applied ✗". A textbook silent regression.
-
-**Fix**: call `wait_boot()` explicitly, with a comment explaining it is a hard precondition,
-not a precaution. The animation writes also went from blind to **read-back verified with retries**
-(previously a failed write was invisible, and the log printed the *expected* value, not the actual one).
-
-> This was only found because the user asked whether the animations were supposed to be set to
-> 1.0 first, after boot. The two-step itself was intact — but its precondition had been dropped.
-> **The trick only means anything if the precondition holds.**
-
-### 4. Copy rewritten
-
-Install banner, Action report, all three WebUI tabs, FAQ, and failure messages were
-rewritten with the fish's own voice. **Not one piece of technical information was
-dropped** — the accumulated gotchas stay documented, because they will bite again.
+Result is logged: `空文件夹清理完成：N 个`
 
 ---
 

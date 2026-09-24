@@ -1,6 +1,6 @@
 id=SL8541E_Config_Fix
 name=zero-sl8541e和顺成方案设备优化
-version=1.5
-versionCode=13
+version=1.6
+versionCode=14
 author=B站白马曹 & DeepSeek
 description=🐟 大肥鱼。剥虚标(5G/CPU/RAM/ROM)、关云控(APR/IoT/心跳/BS/UDP)、关指纹人脸；开双击后台/锁屏壁纸/开发者选项/相机重对焦；dex2oat 四核修正、TCP 调优、动态 DNS、充电 3A、关 ZRAM 与日志、恢复动画 + UI 实时优先级、Wear OS；★支持从 GitHub 检查并自更新。仅和顺成方案可用。

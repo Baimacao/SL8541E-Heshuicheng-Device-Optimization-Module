@@ -109,45 +109,48 @@ else
 fi
 settings_put adb_enabled 1 2 >/dev/null 2>&1
 
-# ── 7. 动画：两步法 + 落盘校验 ──
-#   为什么要"先 1.0 再目标值"：直接写缩放值在某些 ROM 上不落盘（会被忽略），
-#   先归位到 1.0、隔一秒再写目标值才会真正写进去。这是实测出来的土办法。
+# ── 7. 动画 ────────────────────────────────────────────────────────────────
+#   ⚠ 已按用户要求还原成 v1.2 的原样写法，不做任何多余动作（不重试、不写 XML）。
+#     v1.5 那版加了"读回校验 + 重试 + 第三次起改 XML"，实测在真机上反而出问题，
+#     所以退回原始实现。教训：这个方法能work靠的是"两步 + 那一秒"，
+#     中间插任何额外操作都可能改变时序。
 #
-#   为什么要校验：这三行原来是无条件盲写，写失败了脚本也不知道，
-#   日志里打印出来的还是"期望值"而不是"实际值" —— 看着像成功。
-#   现在每一步都读回确认，没落盘就重试。
-anim_put() {
-    _key="$1"; _val="$2"; _try=1
-    while [ "$_try" -le 4 ]; do
-        settings put global "$_key" "$_val" 2>/dev/null
-        [ "$(settings_get "$_key")" = "$_val" ] && return 0
-        # settings 连不上 system_server 时改 XML 兜底（与开发者选项同一套逻辑）
-        [ "$_try" -ge 3 ] && settings_xml_force "$_key" "$_val"
-        sleep 2
-        _try=$((_try + 1))
-    done
-    return 1
+#   为什么必须两步：直接写缩放值在这台 ROM 上不生效，要先归位到 1.0、
+#   隔一秒再写目标值才写得进去。
+#   为什么必须等开机完成：见上面 wait_boot() 那段 —— 提前写会被 system_server
+#   的初始化覆盖掉。
+
+# 先记一份"动手前"的现场，用于定位问题（纯读取，不改变任何状态）
+_anim_diag() {
+    _tag="$1"
+    _w=$(settings_get window_animation_scale)
+    _t=$(settings_get transition_animation_scale)
+    _a=$(settings_get animator_duration_scale)
+    fish_log "动画[$_tag] cmd读值: 窗口=${_w:-空} 过渡=${_t:-空} 时长=${_a:-空}"
+    if [ -f /data/system/users/0/settings_global.xml ]; then
+        fish_log "动画[$_tag] XML: $(grep -o 'name="window_animation_scale"[^/]*' /data/system/users/0/settings_global.xml 2>/dev/null | head -1)"
+    else
+        fish_log "动画[$_tag] XML: 读不到 settings_global.xml"
+    fi
 }
 
-anim_ok=1
-# 第一步：归位
-anim_put window_animation_scale     1.0 || anim_ok=0
-anim_put transition_animation_scale 1.0 || anim_ok=0
-anim_put animator_duration_scale    1.0 || anim_ok=0
-sleep 1
-# 第二步：理想值
-anim_put animator_duration_scale    0.5 || anim_ok=0
-anim_put transition_animation_scale 0.75 || anim_ok=0
-anim_put window_animation_scale     0.75 || anim_ok=0
+_anim_diag "动手前"
+fish_log "settings 直读原始输出: [$(settings get global window_animation_scale 2>&1 | tr -d '\n')]"
 
-_aw=$(settings_get window_animation_scale)
-_at=$(settings_get transition_animation_scale)
-_aa=$(settings_get animator_duration_scale)
-if [ "$anim_ok" = "1" ]; then
-    fish_log "动画两步法完成：窗口=$_aw 过渡=$_at 时长=$_aa"
-else
-    fish_log "⚠ 动画写入未全部落盘（窗口=$_aw 过渡=$_at 时长=$_aa）—— 可能 settings 连不上 system_server"
-fi
+# ── 两步法（v1.2 原样）──
+# 第一步：归位到 1.0
+settings put global window_animation_scale 1.0
+settings put global transition_animation_scale 1.0
+settings put global animator_duration_scale 1.0
+sleep 1
+# 第二步：写目标值
+settings put global window_animation_scale 0.75
+settings put global transition_animation_scale 0.75
+settings put global animator_duration_scale 0.5
+
+# 写完后立刻读回，把真实结果记进日志（只为留证，不据此重写）
+_anim_diag "写完后"
+fish_log "动画写入完成（窗口=0.75 过渡=0.75 时长=0.5）"
 
 # ── 8. 生成 WebUI 状态页 ──
 [ -f "$MODDIR/webroot/gen_status.sh" ] && sh "$MODDIR/webroot/gen_status.sh" 2>/dev/null

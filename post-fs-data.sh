@@ -39,6 +39,12 @@ else
     fish_log "⚠ 一个充电节点都没找到 —— 可能不是和顺成方案，或内核改了节点路径"
 fi
 
+# ── 4. 清理空文件夹 ──
+#   放 post-fs-data 而不是 service：这个阶段动手最早，用户还没开始翻文件管理器。
+#   实现里用的是 rmdir（只能删空目录），所以不存在"误删有内容的目录"这种事故。
+_clean=$(clean_empty_dirs)
+fish_log "空文件夹清理完成：$_clean 个"
+
 fish_log "── post-fs-data 结束 ──"
 fish_log "🐟 虚标处理完了。红烧肉呢？"
 exit 0

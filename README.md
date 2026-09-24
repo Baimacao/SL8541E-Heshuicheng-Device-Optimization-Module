@@ -35,88 +35,83 @@ persist.sys.cpu=10    # 四核标十核
 
 ---
 
-## v1.5 主要更新
+## v1.6 主要更新
 
-这一版没有加新功能，**全是重构**。功能一个没少，重复代码清掉了一半。
+这一版是三件事：**把动画改回原样**、**让根管理器的「更新」按钮能用**、**开机清空文件夹**。
 
-### 1. 抽出公共库（最大的改动）
+### 1. 动画实现还原成 v1.2 原样
 
-v1.2 的结构问题：同一段属性在 `post-fs-data.sh` 和 `service.sh` 里各写了一遍、
-充电块写了两遍、`status.sh` / `gen_status.sh` / `action.sh` 里电池读取和格式化抄了三份、
-`chkv()` 抄了三份。改一个值要改四个文件，漏一个就变成"我这儿明明改了怎么没生效"。
+v1.5 我给动画加了「读回校验 + 重试 + 第三次起改 XML」。实测下来**反而出问题**，所以
+按你的要求退回原始实现，一行不多：
 
-现在：
-
+```sh
+# 第一步：归位到 1.0
+settings put global window_animation_scale 1.0
+settings put global transition_animation_scale 1.0
+settings put global animator_duration_scale 1.0
+sleep 1
+# 第二步：写目标值
+settings put global window_animation_scale 0.75
+settings put global transition_animation_scale 0.75
+settings put global animator_duration_scale 0.5
 ```
-lib/common.sh     属性写入 / 电池读取与格式化 / settings 兜底 / 节点数值解析
-lib/prop.list     属性清单（纯文本表，唯一事实来源）
-lib/dns-guard.sh  GitHub 动态 DNS 守护（从 service.sh 的嵌套引号字符串里独立出来）
+
+> 教训：这个方法之所以有效，靠的就是**「两步 + 那一秒」本身**。
+> 中间插任何额外操作（哪怕是读一下值）都可能改变时序。
+>
+> 另外前提是**必须在开机完成之后跑** —— v1.3/v1.4 就是因为漏了 `wait_boot()`
+> 导致动画整段失效（见 `changelog.md` 的 v1.5 条目）。
+
+**新增诊断日志**：写入前、写入后各记一次真实读值，外加 `settings` 命令的原始输出。
+出问题时把这几行发出来就能定位，不用再猜。
+
+### 2. 根管理器的「更新」按钮
+
+模块卡片上的更新按钮**不是模块自己的 WebUI 按钮** —— 它由根管理器提供，
+读的是仓库根目录的 **`update.json`**（Magisk 规范，APatch / KernelSU 都兼容）：
+
+```json
+{
+  "version": "v1.6",
+  "versionCode": 14,
+  "zipUrl": "https://github.com/.../releases/download/v1.6/SL8541E_Config_Fix_v1.6.zip",
+  "changelog": "https://raw.githubusercontent.com/.../main/changelog.md"
+}
 ```
 
-改动量：
+根管理器自己比对版本、自己下载、自己安装 —— **完全不需要模块的 shell 桥接**
+（这台表的 APatch fork 里 `ksu.exec` 是空壳，点按钮没反应，所以这条路才是对的）。
 
-| | v1.2 | v1.3 |
+每次发版 `publish.py` 会自动校验 `update.json` 与 tag／包名／版本号是否一致，
+并真的 HEAD 一下 `zipUrl` 确认能下载。不一致会直接报错，不会让你发出一个"按钮指向错误地址"的版本。
+
+`lib/install.sh`（命令行更新）仍然保留，两套并存：
+
+| 方式 | 入口 | 说明 |
 |---|---|---|
-| 属性定义位置 | 3 处（两个脚本 + system.prop） | 1 处（`lib/prop.list`）+ system.prop |
-| 充电写入块 | 2 份 | 1 个函数 `charge_boost` |
-| 电池格式化函数 | 3 份 | 1 份 |
-| 电池 sysfs 路径探测 | 3 份 | 1 份 |
-| `chkv` 判定 | 3 份 | 1 份 |
-| 脚本总行数 | 约 1070 | 约 800（功能更多、注释更多的情况下） |
+| **根管理器更新按钮** | 模块卡片 | 首选，根管理器原生能力 |
+| 命令行 | `sh lib/install.sh install` | 备选，可脚本化 |
 
-### 2. 健壮性修复（都是会真实咬人的）
+### 3. 开机清理空文件夹
 
-| 问题 | v1.2 | v1.3 |
-|---|---|---|
-| `resetprop` 不存在时 | 整段属性静默失败 | 退回 `setprop`，并记日志说明 |
-| 属性写入 | 每次开机无脑刷 40+ 条 | **先读后写**，值对了就不写（`persist.*` 每次写入都落盘，开机路径上是白送 I/O） |
-| 充电节点读回 `node_int` | 直接 `$((RAW/1000))`，读到空串会在部分 shell 报错 | 统一 `node_int()`，非数字返回空、调用方判空 |
-| 电池 `temp` 为负 / 为空 | `$((TMP/10)).$((TMP%10))` 可能出 `3.-5` | 单独处理符号 |
-| `charge_boost ... \| read` | — | 明确避开子 shell 吞变量（写进注释，防止后来人踩回去） |
-| `service.sh` 重复执行 | 设置项写两遍、DNS 守护起两个 | 加 `.run.lock` 防重入 |
-| DNS 守护存活判断 | `pgrep -f "ping -c 1 -w 2 github"`（ping 一结束就误判成没起） | 写 pid 文件 + 查 `/proc/<pid>` |
-| DNS 守护进程 | 塞在 `nohup sh -c '...'` 单引号字符串里，改一行要数引号 | 独立成 `lib/dns-guard.sh` |
-| 卸载残留 | 只清属性，DNS 守护变孤儿进程继续跑 | 一并 kill 守护、清 pid 文件与状态页 |
-| 状态页空值 | 显示空行（用户以为没生效） | 统一显示 `—` |
-| 状态页 iframe | 浏览器会吃缓存 | 切回「状态」Tab 时加时间戳强制重载 |
-| 版本号 | 硬编码在 5 个文件里 | `customize.sh` 从 `module.prop` 读 |
+手表存储小，App 卸载后留一堆空目录，文件管理器里看着烦。开机时自动清一遍。
 
-### 3. 补上一处 v1.2 遗留的漏洞
+**安全边界（宁可少删，不可多删）**：
 
-云控那三条 `ro.*`（`ro.hsc.statistics` / `ro.hsc.iot` / `add.salesservices.register`）
-以及 `ro.soter.support`、`persist.logd.*`、`af.resampler.quality`，
-v1.2 只写在 `system.prop` 里 **没有走 `resetprop`** —— 系统改回去就没人再管。
-现在全部纳入 `lib/prop.list`，和别的属性一起被强制写一遍。
+| 措施 | 说明 |
+|---|---|
+| 用 `rmdir` 而不是 `rm -rf` | `rmdir` 只能删空目录，这是**内核层面的保证** —— 不存在"判断错了把有内容的目录删掉" |
+| 只扫共享存储 | 绝不碰 `/data`、`/system`、`/vendor` |
+| 排除名单 | `.thumbnails` / `.trash` / `LOST.DIR` / `.nomedia` / `Android` / `data` / `obb` |
+| 不扫 `Android/data` | 那是 App 私有目录，删了可能让 App 重建或行为异常，收益不值这个风险 |
+| 深度限制 3 层 | 避免长尾扫描拖慢开机 |
+| 从深到浅删 | 这样"里面只有一个空目录"的父目录也能被顺带清掉 |
 
-> 这是本次唯一的行为变化，方向是"更彻底地关掉上报"，不是新增功能。
+清理范围（可改 `lib/common.sh` 里的 `CLEAN_DIRS`）：
+`Download` / `Documents` / `Pictures` / `Music` / `Movies` / `DCIM` / `Bluetooth` /
+`recordings` / `ringtones` / `alarms` / `notifications` / `podcasts`
 
-### 3b. 修掉 v1.3/v1.4 引入的一个回归（重要）
-
-**`service.sh` 少了"等开机完成"这一步。**
-
-v1.2 里有一句循环等 `sys.boot_completed=1` 再 `sleep 5`，我在 v1.3 重构时
-把这段抽成 `wait_boot()` 放进 `lib/common.sh`，却**忘了在新版 `service.sh` 里调用它**。
-
-后果不是"慢一点"，而是**动画那一段整段白做**：
-
-- `service.sh` 是 late_start，开机完成前就跑了；
-- 此时 system_server 还没把设置项初始化完，我们写的动画缩放会被它随后的初始化覆盖；
-- 「两步法」（先写 1.0、隔一秒再写目标值）**整个依赖这个时序**，提前跑等于两步都失效。
-
-不报错、不留痕，只在状态页上显示"未生效 ✗" —— 典型的静默回归。
-
-**修复**：显式调用 `wait_boot()`，并加注释说明这不是"保险起见"而是硬前置。
-顺手把动画写入从"盲写"改成**带读回校验 + 重试**（原来写失败脚本也不知道，
-日志里打印的其实是期望值而不是实际值，看着像成功）。
-
-> 这条是用户提醒"动画不是要先 1.0 再设理想值吗"才查出来的。
-> 当时两步法本身确实还在，但它的前提被弄丢了 —— **只有前提在，做法才有意义**。
-
-### 4. 文案重写
-
-安装横幅、操作报告、WebUI 三个 Tab、FAQ、失败提示，全部重写。
-加了本鱼自己的梗（`~$` 提示符、鱼形 ASCII、`胆子可以肥嘟嘟，代码不能`），
-技术信息一条没删 —— **踩过的坑全部保留在文档里**，因为那些坑还会再咬人。
+清理结果写进 `fix.log`：`空文件夹清理完成：N 个`
 
 ---
 
