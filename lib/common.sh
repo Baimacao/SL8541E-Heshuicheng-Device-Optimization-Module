@@ -73,18 +73,36 @@ prop_set() {
     return 1
 }
 
+# ── 变体（包型）─────────────────────────────────────────────────────────────
+#   hsc = 和顺成（HSC）方案特供包：额外处理虚标 / 云控 / 指纹人脸等原厂定制项
+#   uni = 通用包：只做与机型无关的优化（dex2oat / TCP / 图形 / 日志 / 音频）
+# 决定权在 lib/variant 文件（构建时写入），运行时只读它。
+VARIANT="hsc"
+[ -f "$LIB/variant" ] && VARIANT=$(cat "$LIB/variant" 2>/dev/null | tr -d ' \r\n')
+[ -n "$VARIANT" ] || VARIANT="hsc"
+
 # prop_apply [scope...]
 #   按 prop.list 批量写入；scope 是列1 的标签（core/service/action）。
-#   不传 scope = 全写。用 while read 而不是 for，逐行处理不吃内存。
+#   不传 scope = 全写（仍受 variant 过滤）。用 while read 而不是 for，逐行处理不吃内存。
+#
+#   prop.list 列序： scope | key | variant | value | 说明
+#   variant 列：hsc = 仅 HSC 包写；all = 两个包都写
 prop_apply() {
     _want="$*"
     [ -f "$PROP_LIST" ] || { fish_log "prop.list 不见了，属性全部跳过"; return 1; }
-    prop_ok=0; prop_bad=0
+    prop_ok=0; prop_bad=0; prop_skip=0
 
-    while IFS='|' read -r _kind _key _val _note; do
+    while IFS='|' read -r _kind _key _var _val _note; do
         case "$_kind" in ''|\#*) continue ;; esac
         _key=$(echo "$_key" | tr -d ' \t')
+        _var=$(echo "$_var" | tr -d ' \t')
         [ -n "$_key" ] || continue
+
+        # 变体过滤：通用包跳过所有 hsc 专属项
+        if [ "$_var" = "hsc" ] && [ "$VARIANT" != "hsc" ]; then
+            prop_skip=$((prop_skip+1))
+            continue
+        fi
 
         if [ -n "$_want" ]; then
             _hit=0
@@ -94,7 +112,7 @@ prop_apply() {
         prop_set "$_key" "$_val"
     done < "$PROP_LIST"
 
-    fish_log "属性清单：命中 $prop_ok 项，未生效 $prop_bad 项"
+    fish_log "属性清单[$VARIANT]：命中 $prop_ok 项，未生效 $prop_bad 项，按变体跳过 $prop_skip 项"
     return 0
 }
 

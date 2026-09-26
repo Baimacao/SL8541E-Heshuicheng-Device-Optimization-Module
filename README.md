@@ -35,85 +35,54 @@ persist.sys.cpu=10    # 四核标十核
 
 ---
 
-## v1.6 主要更新
+## v1.7 主要更新
 
-这一版是三件事：**把动画改回原样**、**让根管理器的「更新」按钮能用**、**开机清空文件夹**。
+### 1. 动画间隔 1 秒 → 6 秒（这次是真修好了）
 
-### 1. 动画实现还原成 v1.2 原样
-
-v1.5 我给动画加了「读回校验 + 重试 + 第三次起改 XML」。实测下来**反而出问题**，所以
-按你的要求退回原始实现，一行不多：
+两步法的结构没问题，问题是**间隔太短**。1 秒不生效，**6 秒实测可行**：
 
 ```sh
-# 第一步：归位到 1.0
-settings put global window_animation_scale 1.0
+settings put global window_animation_scale 1.0      # 第一步：归位
 settings put global transition_animation_scale 1.0
 settings put global animator_duration_scale 1.0
-sleep 1
-# 第二步：写目标值
-settings put global window_animation_scale 0.75
+sleep 6                                             # ★ 原来这里写的是 1
+settings put global window_animation_scale 0.75     # 第二步：目标值
 settings put global transition_animation_scale 0.75
 settings put global animator_duration_scale 0.5
 ```
 
-> 教训：这个方法之所以有效，靠的就是**「两步 + 那一秒」本身**。
-> 中间插任何额外操作（哪怕是读一下值）都可能改变时序。
->
-> 另外前提是**必须在开机完成之后跑** —— v1.3/v1.4 就是因为漏了 `wait_boot()`
-> 导致动画整段失效（见 `changelog.md` 的 v1.5 条目）。
+三个前提缺一不可：**两步** + **间隔够长** + **必须在开机之后**（`wait_boot()` 保证）。
+另外动画段挪到了 `service.sh` 最后，`sleep 6` 期间不阻塞 WebUI 状态页生成。
 
-**新增诊断日志**：写入前、写入后各记一次真实读值，外加 `settings` 命令的原始输出。
-出问题时把这几行发出来就能定位，不用再猜。
+这版刻意保持朴素：不重试、不写 XML、不做读回分支 —— 这套时序很脆，
+中间插任何额外操作都可能坏掉，唯一该调的就是"等多久"。
 
-### 2. 根管理器的「更新」按钮
+### 2. `module.prop` 增加 `updateJson` 声明
 
-模块卡片上的更新按钮**不是模块自己的 WebUI 按钮** —— 它由根管理器提供，
-读的是仓库根目录的 **`update.json`**（Magisk 规范，APatch / KernelSU 都兼容）：
+上一版只放了 `update.json` 文件却**没在 `module.prop` 里声明**，管理器不知道去哪读，
+所以更新按钮一直不出现。现在补上：
 
-```json
-{
-  "version": "v1.6",
-  "versionCode": 14,
-  "zipUrl": "https://github.com/.../releases/download/v1.6/SL8541E_Config_Fix_v1.6.zip",
-  "changelog": "https://raw.githubusercontent.com/.../main/changelog.md"
-}
+```properties
+updateJson=https://github.com/Baimacao/SL8541E-Heshuicheng-Device-Optimization-Module/releases/latest/download/update.json
 ```
 
-根管理器自己比对版本、自己下载、自己安装 —— **完全不需要模块的 shell 桥接**
-（这台表的 APatch fork 里 `ksu.exec` 是空壳，点按钮没反应，所以这条路才是对的）。
+用 `releases/latest/download/` 而不是 raw 域名：URL 永不改动、自动指向最新、
+且 release 资产域名的国内可达性明显更好。`update.json` 由发布脚本每次自动生成并挂上。
 
-每次发版 `publish.py` 会自动校验 `update.json` 与 tag／包名／版本号是否一致，
-并真的 HEAD 一下 `zipUrl` 确认能下载。不一致会直接报错，不会让你发出一个"按钮指向错误地址"的版本。
+> ⚠ 更新按钮只指向 **HSC 特供包**。要通用包请手动下载。
 
-`lib/install.sh`（命令行更新）仍然保留，两套并存：
+### 3. 发布两种包型
 
-| 方式 | 入口 | 说明 |
+| 包 | 文件名 | 适合 |
 |---|---|---|
-| **根管理器更新按钮** | 模块卡片 | 首选，根管理器原生能力 |
-| 命令行 | `sh lib/install.sh install` | 备选，可脚本化 |
+| HSC 特供 | `SL8541E_Config_Fix_v1.7_HSC.zip` | 和顺成方案手表，完整功能 |
+| 通用 | `SL8541E_Config_Fix_v1.7_Universal.zip` | 其他 SL8541E / 同类 Android 8.1 设备 |
 
-### 3. 开机清理空文件夹
+通用包**不做**虚标 / 云控 / 指纹人脸 —— 那些属性名（`ro.hsc.*`、`persist.sys.5g` 等）
+只有和顺成方案才有，写别的机型要么无效、要么覆盖掉人家自己的定制值。
+两包同一份源码构建，差异只在 `lib/prop.list` 的 `variant` 列 + `lib/variant` 文件。
 
-手表存储小，App 卸载后留一堆空目录，文件管理器里看着烦。开机时自动清一遍。
-
-**安全边界（宁可少删，不可多删）**：
-
-| 措施 | 说明 |
-|---|---|
-| 用 `rmdir` 而不是 `rm -rf` | `rmdir` 只能删空目录，这是**内核层面的保证** —— 不存在"判断错了把有内容的目录删掉" |
-| 只扫共享存储 | 绝不碰 `/data`、`/system`、`/vendor` |
-| 排除名单 | `.thumbnails` / `.trash` / `LOST.DIR` / `.nomedia` / `Android` / `data` / `obb` |
-| 不扫 `Android/data` | 那是 App 私有目录，删了可能让 App 重建或行为异常，收益不值这个风险 |
-| 深度限制 3 层 | 避免长尾扫描拖慢开机 |
-| 从深到浅删 | 这样"里面只有一个空目录"的父目录也能被顺带清掉 |
-
-清理范围（可改 `lib/common.sh` 里的 `CLEAN_DIRS`）：
-`Download` / `Documents` / `Pictures` / `Music` / `Movies` / `DCIM` / `Bluetooth` /
-`recordings` / `ringtones` / `alarms` / `notifications` / `podcasts`
-
-清理结果写进 `fix.log`：`空文件夹清理完成：N 个`
-
----
+模块 ID 相同，**不能同时安装**。
 
 ## 功能清单
 

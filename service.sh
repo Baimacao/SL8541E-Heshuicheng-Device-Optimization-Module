@@ -109,52 +109,47 @@ else
 fi
 settings_put adb_enabled 1 2 >/dev/null 2>&1
 
-# ── 7. 动画 ────────────────────────────────────────────────────────────────
-#   ⚠ 已按用户要求还原成 v1.2 的原样写法，不做任何多余动作（不重试、不写 XML）。
-#     v1.5 那版加了"读回校验 + 重试 + 第三次起改 XML"，实测在真机上反而出问题，
-#     所以退回原始实现。教训：这个方法能work靠的是"两步 + 那一秒"，
-#     中间插任何额外操作都可能改变时序。
-#
-#   为什么必须两步：直接写缩放值在这台 ROM 上不生效，要先归位到 1.0、
-#   隔一秒再写目标值才写得进去。
-#   为什么必须等开机完成：见上面 wait_boot() 那段 —— 提前写会被 system_server
-#   的初始化覆盖掉。
+# ── 7. 生成 WebUI 状态页 ──
+#   放到动画之前：动画那两步之间要 sleep 几十秒，不能让它挡住状态页生成
+#   （否则用户点开 WebUI 会看到上一次开机的旧快照）。
+[ -f "$MODDIR/webroot/gen_status.sh" ] && sh "$MODDIR/webroot/gen_status.sh" 2>/dev/null
+fish_log "WebUI 状态页已生成"
 
-# 先记一份"动手前"的现场，用于定位问题（纯读取，不改变任何状态）
+# ── 8. 动画：两步法（安排在最后，因为它要长时间 sleep）────────────────────
+#   用户实测反馈（v1.6 之后）：
+#     · 两步法本身绝对可行 —— 不要动它的结构
+#     · **两步之间的间隔要够长**，1 秒不够 → 实测 **6 秒** 可用
+#     · 必须**在开机完成之后**执行 —— 这一条由上面的 wait_boot() 保证
+#
+#   所以这里刻意保持"朴素"：不重试、不写 XML、不做读回判断驱动分支。
+#   v1.5 那版加了读回校验+重试，实测反而失效 —— 教训是这套时序很脆，
+#   中间插任何额外操作都可能坏掉，唯一该调的就是"等多久"。
+#
+#   为什么直接写不生效、必须先归位：这台 ROM 上直接写缩放值不会落盘，
+#   得先写 1.0 让系统把当前值认下来，隔几秒再写目标值才会真正写进去。
+
+# 记录动手前的现场（纯读取，不改变任何状态），出问题好定位
 _anim_diag() {
     _tag="$1"
-    _w=$(settings_get window_animation_scale)
-    _t=$(settings_get transition_animation_scale)
-    _a=$(settings_get animator_duration_scale)
-    fish_log "动画[$_tag] cmd读值: 窗口=${_w:-空} 过渡=${_t:-空} 时长=${_a:-空}"
-    if [ -f /data/system/users/0/settings_global.xml ]; then
-        fish_log "动画[$_tag] XML: $(grep -o 'name="window_animation_scale"[^/]*' /data/system/users/0/settings_global.xml 2>/dev/null | head -1)"
-    else
-        fish_log "动画[$_tag] XML: 读不到 settings_global.xml"
-    fi
+    fish_log "动画[$_tag] 窗口=$(settings_get window_animation_scale) 过渡=$(settings_get transition_animation_scale) 时长=$(settings_get animator_duration_scale)"
 }
 
 _anim_diag "动手前"
-fish_log "settings 直读原始输出: [$(settings get global window_animation_scale 2>&1 | tr -d '\n')]"
 
-# ── 两步法（v1.2 原样）──
-# 第一步：归位到 1.0
+# ── 第一步：归位到 1.0 ──
 settings put global window_animation_scale 1.0
 settings put global transition_animation_scale 1.0
 settings put global animator_duration_scale 1.0
-sleep 1
-# 第二步：写目标值
+fish_log "动画第一步完成（已归位 1.0），等 6 秒再写目标值"
+
+# ★ 关键：这一步的等待时间要够长。1 秒会失效，6 秒实测可行。
+sleep 6
+
+# ── 第二步：写目标值 ──
 settings put global window_animation_scale 0.75
 settings put global transition_animation_scale 0.75
 settings put global animator_duration_scale 0.5
-
-# 写完后立刻读回，把真实结果记进日志（只为留证，不据此重写）
 _anim_diag "写完后"
-fish_log "动画写入完成（窗口=0.75 过渡=0.75 时长=0.5）"
-
-# ── 8. 生成 WebUI 状态页 ──
-[ -f "$MODDIR/webroot/gen_status.sh" ] && sh "$MODDIR/webroot/gen_status.sh" 2>/dev/null
-fish_log "WebUI 状态页已生成"
 
 fish_log "── service.sh 结束 ──"
 fish_log "🐟 巡检完毕。摸鱼去了，红烧肉记得叫我。"

@@ -1,10 +1,12 @@
 # ═══════════════════════════════════════════════════════════════════════════
 #  属性清单 · 单一事实来源
 #  ---------------------------------------------------------------------------
-#  格式：  scope | key | value | 这行为什么存在
+#  格式：  scope | key | variant | value | 这行为什么存在
 #  scope：  core     = post-fs-data.sh 与 service.sh 都写（二次保险）
 #           service  = 只在开机完成后写
 #           action   = 留给「操作」按钮查询时对照（不参与开机写入）
+#  variant： hsc = 只在和顺成（HSC）方案包写入（虚标/云控/指纹人脸等原厂定制项）
+#           all = 两个包都写（dex2oat / TCP / 图形 / 日志 / 音频等通用优化）
 #
 #  改属性的规矩（血泪版）：
 #    · ro.*      只读，必须走 resetprop；system.prop 里也要同步写一份
@@ -15,43 +17,43 @@
 # ═══════════════════════════════════════════════════════════════════════════
 
 # ── 剥离虚标（原厂把 3G+32G 的表标成 8G+128G / 四核标十核 / 无 5G 硬件标 5G）──
-core|persist.sys.5g|false|关掉 5G 假图标
-core|persist.sys.logo|4G|状态栏回落 4G
-core|persist.sys.cpu|4|四核就报四核
-core|persist.sys.rom.fake|0|存储虚标总开关
-core|persist.sys.isshowrealram|1|按真实内存显示
-core|persist.sys.android.version|8.1|原厂把安卓版本也吹了
+core|persist.sys.5g|hsc|false|关掉 5G 假图标
+core|persist.sys.logo|hsc|4G|状态栏回落 4G
+core|persist.sys.cpu|hsc|4|四核就报四核
+core|persist.sys.rom.fake|hsc|0|存储虚标总开关
+core|persist.sys.isshowrealram|hsc|1|按真实内存显示
+core|persist.sys.android.version|hsc|8.1|原厂把安卓版本也吹了
 
 # ── 云控 / 上报全量关闭（APR 是展锐的异常上报框架，会定期上传设备信息）──
 #   注意：这一组全是 ro.*，system.prop 只负责开机注入一次。
 #   v1.2 就漏在这里 —— 系统只要改回去，模块这边没人再管。现在一并走 resetprop。
-core|ro.hsc.statistics|false|统计总开关
-core|ro.hsc.iot|false|IoT 云控
-core|add.salesservices.register|false|销售服务注册
-core|ro.soter.support|false|Soter 支付支持
-core|persist.sys.apr.enabled|0|APR 总开关
-core|persist.sys.apr.autoupload|0|禁止自动上传
-core|persist.sys.apr.reportlevel|0|上报等级归零
-service|persist.sys.apr.intervaltime|0|上报间隔（只在后期补一次即可）
-service|persist.sys.apr.lifetime|0|生命周期上报
-service|persist.sys.apr.reload|0|重载上报
-service|persist.sys.apr.exceptionnode|0|异常节点上报
-core|persist.sys.bsservice.enable|0|BS 服务
-core|persist.sys.heartbeat.enable|0|心跳（闹钟疑似相关的唯一嫌疑，出问题先删它）
-core|persist.sys.start_udpdatastall|0|UDP 数据收集
-core|persist.sys.romSP|false|存储虚标子开关
+core|ro.hsc.statistics|hsc|false|统计总开关
+core|ro.hsc.iot|hsc|false|IoT 云控
+core|add.salesservices.register|hsc|false|销售服务注册
+core|ro.soter.support|hsc|false|Soter 支付支持
+core|persist.sys.apr.enabled|hsc|0|APR 总开关
+core|persist.sys.apr.autoupload|hsc|0|禁止自动上传
+core|persist.sys.apr.reportlevel|hsc|0|上报等级归零
+service|persist.sys.apr.intervaltime|hsc|0|上报间隔（只在后期补一次即可）
+service|persist.sys.apr.lifetime|hsc|0|生命周期上报
+service|persist.sys.apr.reload|hsc|0|重载上报
+service|persist.sys.apr.exceptionnode|hsc|0|异常节点上报
+core|persist.sys.bsservice.enable|hsc|0|BS 服务
+core|persist.sys.heartbeat.enable|hsc|0|心跳（闹钟疑似相关的唯一嫌疑，出问题先删它）
+core|persist.sys.start_udpdatastall|hsc|0|UDP 数据收集
+core|persist.sys.romSP|hsc|false|存储虚标子开关
 
 # ── 指纹 / 人脸（这块表指纹精度差、误识率高，关了反而省电）──
-core|persist.support.fingerprint|false|指纹总开关
-service|persist.sprd.fp.lockapp|false|指纹锁应用
-service|persist.sprd.fp.launchapp|false|指纹启动应用
-core|heils.facelock|0|人脸解锁
-service|persist.sys.cam.faceid.version|0|人脸版本号归零
+core|persist.support.fingerprint|hsc|false|指纹总开关
+service|persist.sprd.fp.lockapp|hsc|false|指纹锁应用
+service|persist.sprd.fp.launchapp|hsc|false|指纹启动应用
+core|heils.facelock|hsc|0|人脸解锁
+service|persist.sys.cam.faceid.version|hsc|0|人脸版本号归零
 
 # ── 开着有用的 ──
-core|persist.sys.cam.refocus.enable|true|相机重对焦
-core|ro.config.f14_double_click_recent_tasks|true|双击打开后台
-core|ro.lockwallpaper.enable|true|锁屏壁纸
+core|persist.sys.cam.refocus.enable|hsc|true|相机重对焦
+core|ro.config.f14_double_click_recent_tasks|hsc|true|双击打开后台
+core|ro.lockwallpaper.enable|hsc|true|锁屏壁纸
 
 # ── dex2oat 四核修正 ──
 #   原厂 dex2oat_4t 模块把 CPU set 写成 4,5,6,7，但这颗表只有 0~3 四个核，
@@ -66,23 +68,23 @@ core|dalvik.vm.background-dex2oat-cpu-set|0,1,2,3|★ 修正点
 core|dalvik.vm.default-dex2oat-cpu-set|0,1,2,3|★ 修正点
 
 # ── 网络 ──
-core|net.tcp.default_init_rwnd|256|原值 60 太小，慢启动太慢
+core|net.tcp.default_init_rwnd|all|256|原值 60 太小，慢启动太慢
 
 # ── 图形 / 动画 ──
 #   原厂为省电把这两个设成 1，结果动画跳帧严重；改回 0 恢复完整动画。
-core|debug.sf.disable_backpressure|0|恢复 SurfaceFlinger 背压
-core|debug.sf.latch_unsignaled|0|恢复 vsync 同步
-core|sys.use_fifo_ui|1|UI/RenderThread 走 SCHED_FIFO，弱 CPU 防掉帧
-core|ro.config.zram.support|false|3G 剩 2G，压缩换页纯属给 CPU 加活
+core|debug.sf.disable_backpressure|all|0|恢复 SurfaceFlinger 背压
+core|debug.sf.latch_unsignaled|all|0|恢复 vsync 同步
+core|sys.use_fifo_ui|all|1|UI/RenderThread 走 SCHED_FIFO，弱 CPU 防掉帧
+core|ro.config.zram.support|all|false|3G 剩 2G，压缩换页纯属给 CPU 加活
 
 # ── 关日志（弱鸡 SoC 上，日志写入是实打实的 I/O 与后台唤醒）──
-core|persist.logd.logpersistd|OFF|关掉持久化日志
-service|persist.logd.size|64K|主缓冲
-service|persist.logd.size.crash|64K|crash 缓冲
-service|persist.logd.size.system|64K|system 缓冲
-service|persist.logd.size.main|64K|main 缓冲
-service|persist.logd.size.radio|64K|radio 缓冲
-service|persist.logd.size.events|64K|events 缓冲
+core|persist.logd.logpersistd|all|OFF|关掉持久化日志
+service|persist.logd.size|all|64K|主缓冲
+service|persist.logd.size.crash|all|64K|crash 缓冲
+service|persist.logd.size.system|all|64K|system 缓冲
+service|persist.logd.size.main|all|64K|main 缓冲
+service|persist.logd.size.radio|all|64K|radio 缓冲
+service|persist.logd.size.events|all|64K|events 缓冲
 
 # ── 音频重采样质量（硬件锁 44100/16bit；不碰 V4A，那是红线）──
-core|af.resampler.quality|4|默认质量一般，提到 4 减少高频损失
+core|af.resampler.quality|all|4|默认质量一般，提到 4 减少高频损失

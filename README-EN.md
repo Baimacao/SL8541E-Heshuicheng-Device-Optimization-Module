@@ -32,89 +32,59 @@ and it shuts the telemetry down on the way.
 
 ---
 
-## What's new in v1.6
+## What's new in v1.7
 
-Three things this round: **animation restored to the original**, **the root manager's
-Update button now works**, and **empty folders get cleaned at boot**.
+### 1. Animation gap: 1 second -> 6 seconds (actually fixed this time)
 
-### 1. Animation restored to v1.2 verbatim
-
-In v1.5 I added read-back verification, retries, and an XML fallback to the animation block.
-On the real device that made things *worse*, so it is now reverted to the original — nothing extra:
+The two-step structure was never wrong; the **gap was too short**. One second does not
+stick, **six seconds does**:
 
 ```sh
-# step 1: reset to 1.0
-settings put global window_animation_scale 1.0
+settings put global window_animation_scale 1.0      # step 1: reset
 settings put global transition_animation_scale 1.0
 settings put global animator_duration_scale 1.0
-sleep 1
-# step 2: write the real values
-settings put global window_animation_scale 0.75
+sleep 6                                             # used to be 1
+settings put global window_animation_scale 0.75     # step 2: target values
 settings put global transition_animation_scale 0.75
 settings put global animator_duration_scale 0.5
 ```
 
-> Lesson: this trick works because of **the two steps plus that one second**.
-> Inserting *anything* in between — even a read — can disturb the timing.
->
-> It also has a precondition: it must run **after boot completes**. v1.3/v1.4 broke exactly
-> that by dropping the `wait_boot()` call (see the v1.5 entry in `changelog.md`).
+Three preconditions, all required: **two steps** + **a long enough gap** + **after boot**
+(guaranteed by `wait_boot()`). The block also moved to the end of `service.sh` so the
+`sleep 6` no longer delays status-page generation.
 
-**New diagnostics**: the actual values are logged before and after the write, plus the raw
-`settings` output. Send those lines if it misbehaves and we can stop guessing.
+Deliberately kept plain: no retries, no XML fallback, no read-back branching — the timing is
+fragile and anything inserted in between can break it. The only knob worth turning is "how long".
 
-### 2. The root manager's Update button
+### 2. `updateJson` declared in `module.prop`
 
-The update button on the module card is **not** the module's own WebUI button — it is provided
-by the root manager, which reads **`update.json`** at the repo root (Magisk spec; APatch and
-KernelSU both support it):
+The previous release shipped an `update.json` file but **never declared it in `module.prop`**,
+so the manager had no idea where to look and the Update button never appeared. Now declared:
 
-```json
-{
-  "version": "v1.6",
-  "versionCode": 14,
-  "zipUrl": "https://github.com/.../releases/download/v1.6/SL8541E_Config_Fix_v1.6.zip",
-  "changelog": "https://raw.githubusercontent.com/.../main/changelog.md"
-}
+```properties
+updateJson=https://github.com/Baimacao/SL8541E-Heshuicheng-Device-Optimization-Module/releases/latest/download/update.json
 ```
 
-The manager compares versions, downloads, and installs by itself — **no shell bridge needed**
-(this watch's APatch fork has a hollow `ksu.exec`, so a WebUI button does nothing; this is the
-correct route).
+`releases/latest/download/` rather than a raw URL: the URL never changes, always points at the
+newest release, and release-asset reachability is markedly better from mainland China.
+`update.json` is generated and attached automatically on every release.
 
-On every release `publish.py` verifies `update.json` against the tag, asset name and version,
-and HEADs the `zipUrl` to confirm it downloads. A mismatch fails the release instead of
-shipping a button that points at the wrong place.
+> Warning: the Update button only points at the **HSC-specific package**. Download the universal
+> one manually if that is what you need.
 
-`lib/install.sh` (command-line updater) is still there; both routes coexist:
+### 3. Two package variants
 
-| Route | Entry point | Notes |
+| Package | File | For |
 |---|---|---|
-| **Root manager Update button** | module card | preferred, native ability |
-| Command line | `sh lib/install.sh install` | fallback, scriptable |
+| HSC-specific | `SL8541E_Config_Fix_v1.7_HSC.zip` | Heshuicheng watches, full feature set |
+| Universal | `SL8541E_Config_Fix_v1.7_Universal.zip` | other SL8541E / similar Android 8.1 devices |
 
-### 3. Empty-folder cleanup at boot
+The universal build **skips** fakery/telemetry/biometric handling — those property names
+(`ro.hsc.*`, `persist.sys.5g`, ...) only exist on Heshuicheng units; writing them elsewhere is
+either a no-op or clobbers the vendor's own values. Both are built from one source tree; the only
+difference is the `variant` column in `lib/prop.list` plus the `lib/variant` marker file.
 
-Small storage, and uninstalled apps leave empty directories that clutter the file manager.
-Cleaned once at boot.
-
-**Safety boundaries** (better to delete too little than too much):
-
-| Measure | Why |
-|---|---|
-| `rmdir`, never `rm -rf` | `rmdir` only removes empty directories — a **kernel-level guarantee**, so there is no "oops, judged wrong and deleted real data" |
-| Shared storage only | never touches `/data`, `/system`, `/vendor` |
-| Skip list | `.thumbnails` / `.trash` / `LOST.DIR` / `.nomedia` / `Android` / `data` / `obb` |
-| `Android/data` is never scanned | app-private; deleting could make apps rebuild or misbehave — not worth the risk |
-| Depth limit 3 | avoids long tails slowing boot |
-| Deepest-first | so a parent whose only child was an empty dir gets cleaned too |
-
-Scope (edit `CLEAN_DIRS` in `lib/common.sh`): `Download` / `Documents` / `Pictures` / `Music` /
-`Movies` / `DCIM` / `Bluetooth` / `recordings` / `ringtones` / `alarms` / `notifications` / `podcasts`
-
-Result is logged: `空文件夹清理完成：N 个`
-
----
+Same module ID, so they **cannot be installed side by side**.
 
 ## Features
 

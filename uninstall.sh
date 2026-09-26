@@ -18,12 +18,25 @@ touch "$LOG" 2>/dev/null
 echo "════════════════════════════════════════" >> "$LOG"
 echo "开始卸载 $(date)" >> "$LOG"
 
-# ── 要清的属性：凡是模块写过的 persist.* / 非 ro 属性 ──
+# ── 要清的属性：凡是模块写过的 persist.* ──
 #   直接从 prop.list 里抓，避免"加了属性忘了加这里"。
+#   prop.list 列序： scope | key | variant | value | 说明
+#   按变体过滤：通用包没写过 hsc 专属属性，就不该去删它们。
+VARIANT="hsc"
+[ -f "$MODDIR/lib/variant" ] && VARIANT=$(cat "$MODDIR/lib/variant" 2>/dev/null | tr -d ' \r\n')
+[ -n "$VARIANT" ] || VARIANT="hsc"
+echo "包型：$VARIANT" >> "$LOG"
+
 PERSIST_PROPS=""
 if [ -f "$MODDIR/lib/prop.list" ]; then
-    PERSIST_PROPS=$(grep -v '^#' "$MODDIR/lib/prop.list" 2>/dev/null \
-        | cut -d'|' -f2 | tr -d ' \t' | grep -E '^persist\.' )
+    # ⚠ 本机玩具箱（toybox）没有 awk，纯 shell 过滤，别改回 awk
+    while IFS='|' read -r _s _k _var _v _n; do
+        case "$_s" in ''|\#*) continue ;; esac
+        _k=$(echo "$_k" | tr -d ' \t')
+        case "$_k" in persist.*) ;; *) continue ;; esac
+        if [ "$_var" = "hsc" ] && [ "$VARIANT" != "hsc" ]; then continue; fi
+        PERSIST_PROPS="$PERSIST_PROPS $_k"
+    done < "$MODDIR/lib/prop.list"
 fi
 
 # prop.list 丢了也要能清干净 —— 这份是兜底硬编码
