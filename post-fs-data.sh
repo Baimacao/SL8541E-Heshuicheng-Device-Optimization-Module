@@ -17,7 +17,10 @@ MODDIR="${MODDIR:-${0%/*}}"
 # shellcheck source=lib/common.sh
 . "$MODDIR/lib/common.sh"
 
-fish_log "── post-fs-data 开始 ──"
+# 启动指纹：不带这一行就无法判断"这一轮到底跑没跑"。
+# 起因：体检报告显示充电还是原厂值，但离线模拟里写入是成功的 ——
+# 到底是脚本没跑、写失败、还是写了被系统改回去，全靠这行 + charge_boost 的明细来分。
+fish_log "══ post-fs-data 开始（包型 $VARIANT，模块 v$(module_version)，boot=$(getprop ro.boottime.init 2>/dev/null || echo '?')) ══"
 fish_log "咕噜。大肥鱼上岸，先把这锅虚标端走。"
 
 # ── 1. 属性清单（core 段一次写全，省得后期再补）──
@@ -32,11 +35,12 @@ fish_log "ZRAM：已下发关停指令"
 # ── 3. 充电 3A —— 本次启动唯一必须抢时间做的事 ──
 #   节点单位是 µA：原厂 500000 = 500mA，目标 3000000 = 3000mA。
 #   实速取决于充电器握手（5V1A 实测约 890mA），软件只能把上限放开。
-_hit=$(charge_boost post-fs-data)
-if [ "$_hit" -gt 0 ] 2>/dev/null; then
-    fish_log "充电节点已全部放开（$_hit 个）"
+#   charge_boost 会自己把「原值→现值」明细写进日志，这里只汇总。
+_ok=$(charge_boost post-fs-data)
+if [ "${_ok:-0}" -gt 0 ] 2>/dev/null; then
+    fish_log "充电加速：$_ok 个节点写入成功"
 else
-    fish_log "⚠ 一个充电节点都没找到 —— 可能不是和顺成方案，或内核改了节点路径"
+    fish_log "⚠ 充电加速一个节点都没写成功 —— 看上面 charge_boost 的明细（不存在 / 只读 / 报错都记了）"
 fi
 
 # ── 4. 清理空文件夹 ──
@@ -45,6 +49,6 @@ fi
 _clean=$(clean_empty_dirs)
 fish_log "空文件夹清理完成：$_clean 个"
 
-fish_log "── post-fs-data 结束 ──"
+fish_log "══ post-fs-data 结束 ══"
 fish_log "🐟 虚标处理完了。红烧肉呢？"
 exit 0

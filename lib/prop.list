@@ -58,14 +58,14 @@ core|ro.lockwallpaper.enable|hsc|true|锁屏壁纸
 # ── dex2oat 四核修正 ──
 #   原厂 dex2oat_4t 模块把 CPU set 写成 4,5,6,7，但这颗表只有 0~3 四个核，
 #   dex2oat 找不到核心会静默退回单线程 —— 写着"4 核"其实一个核在干活。
-core|dalvik.vm.dex2oat-threads|4|编译线程
-core|dalvik.vm.image-dex2oat-threads|4|镜像编译线程
-core|dalvik.vm.bg-dex2oat-threads|4|后台编译线程
-core|dalvik.vm.boot-dex2oat-threads|4|开机编译线程
-core|dalvik.vm.dex2oat-cpu-set|0,1,2,3|★ 修正点
-core|dalvik.vm.boot-dex2oat-cpu-set|0,1,2,3|★ 修正点
-core|dalvik.vm.background-dex2oat-cpu-set|0,1,2,3|★ 修正点
-core|dalvik.vm.default-dex2oat-cpu-set|0,1,2,3|★ 修正点
+core|dalvik.vm.dex2oat-threads|all|4|编译线程
+core|dalvik.vm.image-dex2oat-threads|all|4|镜像编译线程
+core|dalvik.vm.bg-dex2oat-threads|all|4|后台编译线程
+core|dalvik.vm.boot-dex2oat-threads|all|4|开机编译线程
+core|dalvik.vm.dex2oat-cpu-set|all|0,1,2,3|★ 修正点
+core|dalvik.vm.boot-dex2oat-cpu-set|all|0,1,2,3|★ 修正点
+core|dalvik.vm.background-dex2oat-cpu-set|all|0,1,2,3|★ 修正点
+core|dalvik.vm.default-dex2oat-cpu-set|all|0,1,2,3|★ 修正点
 
 # ── 网络 ──
 core|net.tcp.default_init_rwnd|all|256|原值 60 太小，慢启动太慢

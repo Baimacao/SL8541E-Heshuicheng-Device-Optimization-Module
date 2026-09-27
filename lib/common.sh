@@ -81,37 +81,70 @@ VARIANT="hsc"
 [ -f "$LIB/variant" ] && VARIANT=$(cat "$LIB/variant" 2>/dev/null | tr -d ' \r\n')
 [ -n "$VARIANT" ] || VARIANT="hsc"
 
-# prop_apply [scope...]
-#   按 prop.list 批量写入；scope 是列1 的标签（core/service/action）。
-#   不传 scope = 全写（仍受 variant 过滤）。用 while read 而不是 for，逐行处理不吃内存。
+# ── prop.list 解析（唯一入口，别在别处再写一遍）──────────────────────────
+#  行格式：  scope | key | variant | value | 说明
 #
-#   prop.list 列序： scope | key | variant | value | 说明
-#   variant 列：hsc = 仅 HSC 包写；all = 两个包都写
-prop_apply() {
+#  ⚠ 这个函数存在的唯一理由是"**绝不能把备注当成属性值写进去**"：
+#    曾经发生过 prop.list 里部分行漏了 variant 列（只有 4 列），而解析代码死认 5 列，
+#    于是把第 4 列（备注，例如「★ 修正点」）当成属性值 resetprop 了上去，
+#    把 dalvik.vm.dex2oat-cpu-set 写成了中文备注 —— 不报错、不留痕，
+#    只有用户翻体检报告才发现。
+#    所以这里对列数**严格校验**：不合法就跳过并记日志。宁可少写，不可写错。
+#
+#  另一个坑：IFS='|' read 不会跳过 '|' 前后的空格（IFS 只含 '|' 时不做空白折叠），
+#  所以每个字段都要手动 tr 掉空白。
+#
+# prop_each <回调> [scope...]
+#   对每一行合法条目调用 "<回调> <key> <value>"。
+#   variant 过滤：var=hsc 的条目在非 hsc 包上跳过。
+prop_each() {
+    _cb="$1"; shift
     _want="$*"
-    [ -f "$PROP_LIST" ] || { fish_log "prop.list 不见了，属性全部跳过"; return 1; }
-    prop_ok=0; prop_bad=0; prop_skip=0
+    [ -f "$PROP_LIST" ] || { fish_log "prop.list 不见了"; return 1; }
+    _n=0; _bad=0
 
-    while IFS='|' read -r _kind _key _var _val _note; do
-        case "$_kind" in ''|\#*) continue ;; esac
-        _key=$(echo "$_key" | tr -d ' \t')
-        _var=$(echo "$_var" | tr -d ' \t')
-        [ -n "$_key" ] || continue
+    while IFS='|' read -r _f1 _f2 _f3 _f4 _f5 _f6; do
+        case "$_f1" in ''|\#*) continue ;; esac
+        _f1=$(echo "$_f1" | tr -d ' \t')
+        _f2=$(echo "$_f2" | tr -d ' \t')
+        _f3=$(echo "$_f3" | tr -d ' \t')
+        _f4=$(echo "$_f4" | tr -d ' \t')
+        _f5=$(echo "$_f5" | tr -d ' \t')
 
-        # 变体过滤：通用包跳过所有 hsc 专属项
-        if [ "$_var" = "hsc" ] && [ "$VARIANT" != "hsc" ]; then
-            prop_skip=$((prop_skip+1))
-            continue
+        # 列数判断：5 列 = 带 variant；4 列 = 老格式，variant 视为 all
+        if [ -n "$_f6" ] || [ -z "$_f4" ]; then
+            _bad=$((_bad + 1)); continue
+        elif [ -n "$_f5" ]; then
+            _var="$_f3"; _val="$_f4"          # scope|key|variant|value|note
+        else
+            _var="all";  _val="$_f3"          # scope|key|value|note
         fi
 
+        [ -n "$_f2" ] || { _bad=$((_bad + 1)); continue; }
+        [ -n "$_val" ] || { _bad=$((_bad + 1)); continue; }
+
+        if [ "$_var" = "hsc" ] && [ "$VARIANT" != "hsc" ]; then
+            prop_skip=$((prop_skip + 1)); continue
+        fi
         if [ -n "$_want" ]; then
             _hit=0
-            for _s in $_want; do [ "$_kind" = "$_s" ] && _hit=1; done
+            for _s in $_want; do [ "$_f1" = "$_s" ] && _hit=1; done
             [ "$_hit" = "1" ] || continue
         fi
-        prop_set "$_key" "$_val"
+
+        _n=$((_n + 1))
+        "$_cb" "$_f2" "$_val"
     done < "$PROP_LIST"
 
+    [ "$_bad" -gt 0 ] && fish_log "⚠ prop.list 有 $_bad 行列数不合法，已跳过（应为 scope|key|variant|value|说明）"
+    return 0
+}
+
+# prop_apply [scope...]
+#   按 prop.list 批量写入属性。scope 不传 = 全写（仍受 variant 过滤）。
+prop_apply() {
+    prop_ok=0; prop_bad=0; prop_skip=0
+    prop_each prop_set "$@"
     fish_log "属性清单[$VARIANT]：命中 $prop_ok 项，未生效 $prop_bad 项，按变体跳过 $prop_skip 项"
     return 0
 }
@@ -144,19 +177,32 @@ CHG_NODES="
 "
 
 # charge_boost <标签>  → 回显一行"节点 = XµA (YmA)"摘要
+#
+# v1.8 起改成**实证式**：每个节点都记「写前 → 写后」，并且把写入的错误原样记下来。
+# 起因：用户体检报告显示 input_limit=500mA / ac_max=600mA（原厂值），
+# 但离线模拟里 charge_boost 明明能正确写入。到底是"没跑"、"写失败"、
+# 还是"写进去又被系统改回去"，只有这三个数摆出来才能分清 —— 不再靠猜。
 charge_boost() {
-    _tag="$1"; _hit=0; _summary=""
+    _tag="$1"; _hit=0; _ok=0; _summary=""
     for _n in $CHG_NODES; do
-        [ -e "$_n" ] || continue
-        echo "$CHG_TARGET" > "$_n" 2>/dev/null
-        _raw=$(node_int "$_n")
-        [ -n "$_raw" ] || continue
+        if [ ! -e "$_n" ]; then
+            fish_log "充电[$_tag] 节点不存在：$_n"
+            continue
+        fi
         _hit=$((_hit+1))
-        _ma=$((_raw / 1000))
-        _summary="$_summary $(basename "${_n%/*}")=$(echo "$_raw" | tr -d '\n')uA(${_ma}mA)"
+        _before=$(node_int "$_n"); [ -n "$_before" ] || _before="读不到"
+        # 不吞 stderr：写不进去的原因（只读 / permission denied）必须留下
+        _err=$(echo "$CHG_TARGET" > "$_n" 2>&1)
+        _after=$(node_int "$_n"); [ -n "$_after" ] || _after="读不到"
+
+        _name=$(basename "$(dirname "$_n")")/$(basename "$_n")
+        _summary="$_summary ${_name}:${_before}→${_after}"
+        [ "$_after" = "$CHG_TARGET" ] && _ok=$((_ok+1))
+        [ -n "$_err" ] && fish_log "充电[$_tag] ⚠ 写 ${_name} 报错：$_err"
     done
-    fish_log "充电[$_tag]：命中 $_hit 个节点 →$_summary"
-    echo "$_hit"
+    fish_log "充电[$_tag]：存在 $_hit 个节点，写入成功 $_ok 个"
+    fish_log "充电[$_tag] 明细（原值→现值，单位 µA）：$_summary"
+    echo "$_ok"
 }
 
 # ── 电池读取（三套可能的 sysfs 路径，挨个试）──

@@ -35,54 +35,45 @@ persist.sys.cpu=10    # 四核标十核
 
 ---
 
-## v1.7 主要更新
+## v1.8 主要更新
 
-### 1. 动画间隔 1 秒 → 6 秒（这次是真修好了）
+### 1. 修掉一个会静默写坏属性的 bug（重要）
 
-两步法的结构没问题，问题是**间隔太短**。1 秒不生效，**6 秒实测可行**：
+`lib/prop.list` 里部分行漏了 `variant` 列（只有 4 列），而解析代码死认 5 列 ——
+于是**把第 4 列（备注）当成了属性值**：
 
-```sh
-settings put global window_animation_scale 1.0      # 第一步：归位
-settings put global transition_animation_scale 1.0
-settings put global animator_duration_scale 1.0
-sleep 6                                             # ★ 原来这里写的是 1
-settings put global window_animation_scale 0.75     # 第二步：目标值
-settings put global transition_animation_scale 0.75
-settings put global animator_duration_scale 0.5
+```
+core|dalvik.vm.dex2oat-cpu-set|0,1,2,3|★ 修正点     ← 4 列
+     → 第3列被当 variant、第4列被当值 → 属性值 = "★ 修正点"
 ```
 
-三个前提缺一不可：**两步** + **间隔够长** + **必须在开机之后**（`wait_boot()` 保证）。
-另外动画段挪到了 `service.sh` 最后，`sleep 6` 期间不阻塞 WebUI 状态页生成。
+结果体检报告里出现 `CPU set：★ 修正点`、`编译线程：未生效`。
+**不报错、不留痕**，只有翻报告才发现。
 
-这版刻意保持朴素：不重试、不写 XML、不做读回分支 —— 这套时序很脆，
-中间插任何额外操作都可能坏掉，唯一该调的就是"等多久"。
+现在解析层对列数**严格校验**：4 列按老格式回退、坏行跳过并记日志 —— 宁可少写，不可写错。
+另加回归测试 `test-proplist.sh`（17 项断言）把这个行为钉死。
 
-### 2. `module.prop` 增加 `updateJson` 声明
+### 2. 充电与巡检改成实证日志
 
-上一版只放了 `update.json` 文件却**没在 `module.prop` 里声明**，管理器不知道去哪读，
-所以更新按钮一直不出现。现在补上：
+体检报告显示充电仍是原厂 500/600mA，但离线模拟证明 `charge_boost` 写入正常。
+那到底是"脚本没跑"、"写失败"、还是"写进去又被系统改回去"？——**不能再猜**：
 
-```properties
-updateJson=https://github.com/Baimacao/SL8541E-Heshuicheng-Device-Optimization-Module/releases/latest/download/update.json
+- `charge_boost` 现在记录每个节点的 **「原值→现值」** 以及写入报错原文（不吞 stderr）
+- `post-fs-data` 开头记一行**启动指纹**：包型 / 模块版本
+
+下次出问题，`fix.log` 里直接能看到答案。
+
+### 3. 体检报告增加模块身份
+
+```
+模块身份（先确认刷的是哪个包）：
+  版本：      v1.8 (code 16)
+  包型：      hsc（和顺成特供）
+  属性清单：  50 条
+  上次巡检：  3 次开机记录
 ```
 
-用 `releases/latest/download/` 而不是 raw 域名：URL 永不改动、自动指向最新、
-且 release 资产域名的国内可达性明显更好。`update.json` 由发布脚本每次自动生成并挂上。
-
-> ⚠ 更新按钮只指向 **HSC 特供包**。要通用包请手动下载。
-
-### 3. 发布两种包型
-
-| 包 | 文件名 | 适合 |
-|---|---|---|
-| HSC 特供 | `SL8541E_Config_Fix_v1.7_HSC.zip` | 和顺成方案手表，完整功能 |
-| 通用 | `SL8541E_Config_Fix_v1.7_Universal.zip` | 其他 SL8541E / 同类 Android 8.1 设备 |
-
-通用包**不做**虚标 / 云控 / 指纹人脸 —— 那些属性名（`ro.hsc.*`、`persist.sys.5g` 等）
-只有和顺成方案才有，写别的机型要么无效、要么覆盖掉人家自己的定制值。
-两包同一份源码构建，差异只在 `lib/prop.list` 的 `variant` 列 + `lib/variant` 文件。
-
-模块 ID 相同，**不能同时安装**。
+另外 hosts 条目数、电池健康/状态的**原始值**也一并显示 —— 读不到时不再只显示"未知"。
 
 ## 功能清单
 

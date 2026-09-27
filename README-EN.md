@@ -32,59 +32,49 @@ and it shuts the telemetry down on the way.
 
 ---
 
-## What's new in v1.7
+## What's new in v1.8
 
-### 1. Animation gap: 1 second -> 6 seconds (actually fixed this time)
+### 1. Fixed a bug that silently wrote corrupt property values (important)
 
-The two-step structure was never wrong; the **gap was too short**. One second does not
-stick, **six seconds does**:
+Some rows in `lib/prop.list` were missing the `variant` column (4 columns only) while the
+parser insisted on 5 — so it **took the 4th column (the note) as the value**:
 
-```sh
-settings put global window_animation_scale 1.0      # step 1: reset
-settings put global transition_animation_scale 1.0
-settings put global animator_duration_scale 1.0
-sleep 6                                             # used to be 1
-settings put global window_animation_scale 0.75     # step 2: target values
-settings put global transition_animation_scale 0.75
-settings put global animator_duration_scale 0.5
+```
+core|dalvik.vm.dex2oat-cpu-set|0,1,2,3|★ 修正点     <- 4 columns
+     -> col3 read as variant, col4 read as value -> property value = "★ 修正点"
 ```
 
-Three preconditions, all required: **two steps** + **a long enough gap** + **after boot**
-(guaranteed by `wait_boot()`). The block also moved to the end of `service.sh` so the
-`sleep 6` no longer delays status-page generation.
+That is where `CPU set: ★ 修正点` and `编译线程: not applied` in the health report came from.
+**No error, no trace** — only visible if you read the report.
 
-Deliberately kept plain: no retries, no XML fallback, no read-back branching — the timing is
-fragile and anything inserted in between can break it. The only knob worth turning is "how long".
+The parser now **validates the column count strictly**: 4-column rows fall back to the old
+format, malformed rows are skipped and logged. Better to write less than to write garbage.
+A regression test (`test-proplist.sh`, 17 assertions) pins this down.
 
-### 2. `updateJson` declared in `module.prop`
+### 2. Charging and boot checks now log evidence
 
-The previous release shipped an `update.json` file but **never declared it in `module.prop`**,
-so the manager had no idea where to look and the Update button never appeared. Now declared:
+The report showed charging still at the stock 500/600mA, yet an offline simulation proves
+`charge_boost` writes correctly. Was the script not running, was the write failing, or was it
+written and then reverted by the system? **No more guessing:**
 
-```properties
-updateJson=https://github.com/Baimacao/SL8541E-Heshuicheng-Device-Optimization-Module/releases/latest/download/update.json
+- `charge_boost` records **before -> after** for every node plus the raw write error (stderr is
+  no longer swallowed)
+- `post-fs-data` logs a boot fingerprint line: package variant and module version
+
+Next time it misbehaves, `fix.log` contains the answer.
+
+### 3. Health report now shows module identity
+
+```
+模块身份（先确认刷的是哪个包）：
+  版本：      v1.8 (code 16)
+  包型：      hsc（和顺成特供）
+  属性清单：  50 条
+  上次巡检：  3 次开机记录
 ```
 
-`releases/latest/download/` rather than a raw URL: the URL never changes, always points at the
-newest release, and release-asset reachability is markedly better from mainland China.
-`update.json` is generated and attached automatically on every release.
-
-> Warning: the Update button only points at the **HSC-specific package**. Download the universal
-> one manually if that is what you need.
-
-### 3. Two package variants
-
-| Package | File | For |
-|---|---|---|
-| HSC-specific | `SL8541E_Config_Fix_v1.7_HSC.zip` | Heshuicheng watches, full feature set |
-| Universal | `SL8541E_Config_Fix_v1.7_Universal.zip` | other SL8541E / similar Android 8.1 devices |
-
-The universal build **skips** fakery/telemetry/biometric handling — those property names
-(`ro.hsc.*`, `persist.sys.5g`, ...) only exist on Heshuicheng units; writing them elsewhere is
-either a no-op or clobbers the vendor's own values. Both are built from one source tree; the only
-difference is the `variant` column in `lib/prop.list` plus the `lib/variant` marker file.
-
-Same module ID, so they **cannot be installed side by side**.
+The hosts entry count and the **raw** battery health/status values are shown too, so a failure
+to read them no longer just displays "unknown".
 
 ## Features
 
