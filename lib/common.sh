@@ -176,15 +176,19 @@ CHG_NODES="
 /sys/devices/platform/battery/power_supply/battery/current_max
 "
 
-# charge_boost <标签>  → 回显一行"节点 = XµA (YmA)"摘要
+# charge_boost <标签> [节点列表]
+#   不传节点列表 = 用默认那 4 个；传了就用传进来的（重试时只补还没写成功的）。
+#   回显"写入成功"的节点数。
 #
 # v1.8 起改成**实证式**：每个节点都记「写前 → 写后」，并且把写入的错误原样记下来。
-# 起因：用户体检报告显示 input_limit=500mA / ac_max=600mA（原厂值），
-# 但离线模拟里 charge_boost 明明能正确写入。到底是"没跑"、"写失败"、
-# 还是"写进去又被系统改回去"，只有这三个数摆出来才能分清 —— 不再靠猜。
+# 起因：用户日志显示 4 个节点全部 500000→500000（写了没变化），
+# 但离线模拟里同一份代码写入正常。到底是"没跑"、"写失败"、还是"被系统改回去"，
+# 只有这三个数摆出来才能分清 —— 不再靠猜。
 charge_boost() {
-    _tag="$1"; _hit=0; _ok=0; _summary=""
-    for _n in $CHG_NODES; do
+    _tag="$1"
+    _nodes="${2:-$CHG_NODES}"
+    _hit=0; _ok=0; _summary=""
+    for _n in $_nodes; do
         if [ ! -e "$_n" ]; then
             fish_log "充电[$_tag] 节点不存在：$_n"
             continue
@@ -203,6 +207,39 @@ charge_boost() {
     fish_log "充电[$_tag]：存在 $_hit 个节点，写入成功 $_ok 个"
     fish_log "充电[$_tag] 明细（原值→现值，单位 µA）：$_summary"
     echo "$_ok"
+}
+
+# charge_retry <标签> [最多尝试次数=5] [间隔秒=4]
+#   有些驱动在开机早期对充电节点是只读的，过一段时间才解锁；"写一次就放弃"
+#   等于白丢机会。这里做**有界**重试：每次只补还没到目标值的节点，全成功即提前退出。
+#   全部失败时把原因写进日志（并提示去跑 diagnose.sh），不做任何猜测性动作。
+charge_retry() {
+    _tag="$1"; _max="${2:-5}"; _gap="${3:-4}"
+    _i=1; _done=0
+    while [ "$_i" -le "$_max" ]; do
+        _todo=""
+        for _n in $CHG_NODES; do
+            [ -e "$_n" ] || continue
+            _v=$(node_int "$_n")
+            [ "$_v" = "$CHG_TARGET" ] || _todo="$_todo $_n"
+        done
+        if [ -z "$_todo" ]; then
+            fish_log "充电[$_tag]：所有节点已是目标值（$(($CHG_TARGET / 1000))mA）"
+            _done=1
+            break
+        fi
+        _ok=$(charge_boost "$_tag/第$_i 次" "$_todo")
+        if [ "${_ok:-0}" -gt 0 ] 2>/dev/null; then
+            fish_log "充电[$_tag]：第 $_i 次尝试成功写入 $_ok 个节点"
+            _done=1
+        fi
+        _i=$((_i + 1))
+        [ "$_i" -le "$_max" ] && sleep "$_gap"
+    done
+    if [ "$_done" != "1" ]; then
+        fish_log "充电[$_tag]：重试 $_max 次仍写不进目标值 → 节点很可能是只读的；跑 diagnose.sh 取证"
+    fi
+    return 0
 }
 
 # ── 电池读取（三套可能的 sysfs 路径，挨个试）──

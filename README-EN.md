@@ -32,49 +32,41 @@ and it shuts the telemetry down on the way.
 
 ---
 
-## What's new in v1.8
+## What's new in v1.9
 
-### 1. Fixed a bug that silently wrote corrupt property values (important)
+### 1. Charging now retries with a bound (and never lies)
 
-Some rows in `lib/prop.list` were missing the `variant` column (4 columns only) while the
-parser insisted on 5 — so it **took the 4th column (the note) as the value**:
+The v1.8 evidence log proved all four nodes read `500000 -> 500000` -- the **nodes cannot be
+written**, the script did run. Some drivers keep the charging nodes read-only early in boot and
+unlock them later, so writes now retry at most 5 times, 4 seconds apart, touching only the nodes
+that have not reached the target yet, and stop early on full success.
 
-```
-core|dalvik.vm.dex2oat-cpu-set|0,1,2,3|★ 修正点     <- 4 columns
-     -> col3 read as variant, col4 read as value -> property value = "★ 修正点"
-```
+If every attempt fails it says so plainly (`retried N times, still not writable -> the node is
+probably read-only`) and **never reports a false success**.
 
-That is where `CPU set: ★ 修正点` and `编译线程: not applied` in the health report came from.
-**No error, no trace** — only visible if you read the report.
+### 2. New `diagnose.sh` for one-shot evidence
 
-The parser now **validates the column count strictly**: 4-column rows fall back to the old
-format, malformed rows are skipped and logged. Better to write less than to write garbage.
-A regression test (`test-proplist.sh`, 17 assertions) pins this down.
-
-### 2. Charging and boot checks now log evidence
-
-The report showed charging still at the stock 500/600mA, yet an offline simulation proves
-`charge_boost` writes correctly. Was the script not running, was the write failing, or was it
-written and then reverted by the system? **No more guessing:**
-
-- `charge_boost` records **before -> after** for every node plus the raw write error (stderr is
-  no longer swallowed)
-- `post-fs-data` logs a boot fingerprint line: package variant and module version
-
-Next time it misbehaves, `fix.log` contains the answer.
-
-### 3. Health report now shows module identity
-
-```
-模块身份（先确认刷的是哪个包）：
-  版本：      v1.8 (code 16)
-  包型：      hsc（和顺成特供）
-  属性清单：  50 条
-  上次巡检：  3 次开机记录
+```bash
+su -c 'sh /data/adb/modules/SL8541E_Config_Fix/diagnose.sh' > /sdcard/diag.txt
 ```
 
-The hosts entry count and the **raw** battery health/status values are shown too, so a failure
-to read them no longer just displays "unknown".
+Reports node permissions/writability, a real write attempt including stderr, a full search for
+other `current` nodes, charging-related dmesg lines, charger online state, prop.list format and
+network reachability.
+
+### 3. DNS guardian: less noise, fixed probing
+
+It used to log "unreachable" every 30 minutes -- thousands of lines a week. **The test itself was
+wrong**: pinging a *hostname* to judge connectivity is circular when DNS is what is broken. It now
+pings DNS-free IPs first to decide whether the network works at all, logs only on **state change**,
+and **reads the hosts file back** after writing -- a failed bind is reported honestly.
+
+### 4. Build-time preflight validation
+
+The v1.8 package with 9 malformed `prop.list` rows was only caught after release; that class of
+error belongs in the build. `preflight` now enforces exactly 5 columns per row, no non-ASCII in the
+value column, the seven required `module.prop` fields, key properties present, and no runtime
+artifacts in the source tree.
 
 ## Features
 

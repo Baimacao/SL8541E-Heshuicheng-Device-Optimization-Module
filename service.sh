@@ -72,9 +72,10 @@ else
 fi
 
 # ── 4. 充电二次保险（节点此时通常已锁，写了不生效也无害）──
-#   注意不能写 `charge_boost service | read _x`：read 在子 shell 里，拿不到值。
-CHG_HIT=$(charge_boost service)
-fish_log "充电二次保险：命中 $CHG_HIT 个节点（开机后大多已锁，写不进属正常）"
+#   开机完成后节点大多已锁，但偶尔有驱动是在这时候才解锁的，所以再做一次
+#   有界重试（3 次 × 5 秒）。全部已是目标值时会直接跳过，不做无用写入。
+#   注意不能写 `charge_retry ... | read _x`：read 在子 shell 里，拿不到值。
+charge_retry service 3 5
 
 # ── 5. 动态 DNS 守护 ──
 GUARD="$MODDIR/lib/dns-guard.sh"

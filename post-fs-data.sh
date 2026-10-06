@@ -35,13 +35,10 @@ fish_log "ZRAM：已下发关停指令"
 # ── 3. 充电 3A —— 本次启动唯一必须抢时间做的事 ──
 #   节点单位是 µA：原厂 500000 = 500mA，目标 3000000 = 3000mA。
 #   实速取决于充电器握手（5V1A 实测约 890mA），软件只能把上限放开。
-#   charge_boost 会自己把「原值→现值」明细写进日志，这里只汇总。
-_ok=$(charge_boost post-fs-data)
-if [ "${_ok:-0}" -gt 0 ] 2>/dev/null; then
-    fish_log "充电加速：$_ok 个节点写入成功"
-else
-    fish_log "⚠ 充电加速一个节点都没写成功 —— 看上面 charge_boost 的明细（不存在 / 只读 / 报错都记了）"
-fi
+#   有些驱动在开机早期对充电节点只读，过一会儿才解锁，所以用 charge_retry 做
+#   有界重试（最多 5 次、每次间隔 4 秒，全部成功就提前退出）。
+#   「原值→现值」明细由 charge_boost 写进日志。
+charge_retry post-fs-data 5 4
 
 # ── 4. 清理空文件夹 ──
 #   放 post-fs-data 而不是 service：这个阶段动手最早，用户还没开始翻文件管理器。
