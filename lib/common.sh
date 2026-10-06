@@ -140,6 +140,14 @@ prop_each() {
     return 0
 }
 
+# prop_list_count → 清单里的有效条目数
+#   为什么不用 `grep -vc '^\s*#\|^\s*$'`：那是"数不匹配的行数"，语义绕；
+#   而且非 GNU grep（Android toybox）对 `\s` 的支持不一致 —— 真机上就出现了空值。
+#   这里用最朴素的两步：先去注释行，再数非空行。
+prop_list_count() {
+    [ -f "$PROP_LIST" ] || { echo 0; return; }
+    grep -v '^[[:space:]]*#' "$PROP_LIST" 2>/dev/null | grep -c '[^[:space:]]'
+}
 # prop_apply [scope...]
 #   按 prop.list 批量写入属性。scope 不传 = 全写（仍受 variant 过滤）。
 prop_apply() {
