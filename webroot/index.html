@@ -1,3 +1,4 @@
+<!-- ⚠ 版本号是硬编码的：每次发版请同步替换本文件与 script.js 里的 vX.Y -->
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -14,7 +15,7 @@
         &gt;&lt;(((('&gt;
        &gt;&lt;(((('&gt;     SL8541E
       &gt;&lt;(((('&gt;      config_fix
-       &gt;&lt;(((('&gt;     v1.6
+       &gt;&lt;(((('&gt;     v2.0
         &gt;&lt;(((('&gt;
     </pre>
     <div class="meta">
@@ -33,7 +34,7 @@
   <section id="tab-status" class="tab-panel active">
     <div class="hint">
       <span class="dim">#</span> 这是开机快照，不是直播。点模块卡片「操作」刷新后再回来看。<br>
-      <span class="dim">#</span> 点一次「操作」= 检查 GitHub 更新；<b>再点一次 = 开始安装</b>（连点两次是防手滑）。
+      <span class="dim">#</span> 点「操作」= 检查 GitHub 更新。要<b>安装</b>新版：用根管理器卡片上的<b>「更新」按钮</b>（读 update-hsc.json）。
     </div>
     <iframe id="status-frame" src="status_generated.html" frameborder="0"></iframe>
   </section>
@@ -55,23 +56,6 @@
            去管理器里手动安装即可：</p>
         <p><code>/data/adb/modules/SL8541E_Config_Fix/update.zip</code></p>
         <p><span class="dim">&gt;</span> 模块在 GitHub 上的地址见「关于」页</p>
-      </div>
-    </details>
-
-    <details class="faq">
-      <summary><span class="brk">[?]</span> 开机清理空文件夹——都删了什么</summary>
-      <div class="faq-body">
-        <p><span class="dim">&gt;</span> 每次开机自动清一遍共享存储里的<b>空目录</b>，
-           App 卸载后留下的空壳会被收走</p>
-        <p><span class="dim">&gt;</span> <b>只删空的</b>：用的是 <code>rmdir</code> ——
-           它不是"先判断是不是空再删"，而是<b>非空就删不掉</b>，所以不存在误删</p>
-        <p><span class="dim">&gt;</span> 范围：Download / Documents / Pictures / Music /
-           Movies / DCIM / Bluetooth / recordings 等常见目录，深度最多 3 层</p>
-        <p><span class="dim">&gt;</span> <b>不碰</b> <code>Android/data</code>（App 私有目录，
-           删了可能让 App 重建或异常），也不碰 /data /system /vendor</p>
-        <p><span class="dim">&gt;</span> 清理数量记在日志里：</p>
-        <p><code>grep 空文件夹 /data/adb/modules/SL8541E_Config_Fix/fix.log</code></p>
-        <p><span class="dim">&gt;</span> 想改范围就编辑 <code>lib/common.sh</code> 里的 <code>CLEAN_DIRS</code></p>
       </div>
     </details>
 
@@ -209,7 +193,7 @@
     <div class="card about-card">
       <h2><span class="dim">&gt;</span> MODULE_INFO</h2>
       <div class="item"><span class="label">name</span><span class="value">zero-sl8541e和顺成方案设备优化</span></div>
-      <div class="item"><span class="label">version</span><span class="value">v1.6</span></div>
+      <div class="item"><span class="label">version</span><span class="value">v2.0</span></div>
       <div class="item"><span class="label">id</span><span class="value">SL8541E_Config_Fix</span></div>
       <div class="item"><span class="label">device</span><span class="value">SL8541E / SC9832E + HSC</span></div>
       <div class="item"><span class="label">root</span><span class="value">APatch / Magisk / KernelSU</span></div>
@@ -286,7 +270,7 @@
   </section>
 
   <footer>
-    <span class="dim">──</span> SL8541E_Config_Fix v1.6 <span class="dim">──</span>
+    <span class="dim">──</span> SL8541E_Config_Fix v2.0 <span class="dim">──</span>
   </footer>
 
 </div>

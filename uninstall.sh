@@ -100,15 +100,18 @@ for p in $(echo "$PERSIST_PROPS $EXTRA_PROPS" | tr ' ' '\n' | grep -v '^$' | sor
 done
 
 # ── 收拾自己起的后台进程和状态文件 ──
-PIDFILE="$MODDIR/.dnsguard.pid"
-if [ -f "$PIDFILE" ]; then
-    _pid=$(cat "$PIDFILE" 2>/dev/null | tr -d ' \n')
+#   两个常驻进程都要收：DNS 守护 + 充电复写循环。
+#   充电那个如果不收，卸载后它会继续跑满 20 轮（约 10 分钟）才自己退出。
+for _pf in "$MODDIR/.dnsguard.pid" "$MODDIR/.charge-keepalive.pid"; do
+    [ -f "$_pf" ] || continue
+    _pid=$(cat "$_pf" 2>/dev/null | tr -d ' \n')
     if [ -n "$_pid" ] && [ -d "/proc/$_pid" ]; then
         kill "$_pid" 2>/dev/null
-        echo "  ✅ 已停止 DNS 守护（pid $_pid）" >> "$LOG"
+        echo "  ✅ 已停止后台进程（pid $_pid）：$(basename "$_pf")" >> "$LOG"
     fi
-fi
-rm -f "$PIDFILE" "$MODDIR/.run.lock" "$MODDIR/.run" 2>/dev/null
+    rm -f "$_pf" 2>/dev/null
+done
+rm -f "$MODDIR/.run.lock" "$MODDIR/.run" 2>/dev/null
 rm -f "$MODDIR/webroot/status_generated.html" "$MODDIR/webroot/status_generated.html.tmp" 2>/dev/null
 
 echo "" >> "$LOG"

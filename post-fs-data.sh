@@ -40,11 +40,6 @@ fish_log "ZRAM：已下发关停指令"
 #   「原值→现值」明细由 charge_boost 写进日志。
 charge_retry post-fs-data 5 4
 
-# ── 4. 清理空文件夹 ──
-#   放 post-fs-data 而不是 service：这个阶段动手最早，用户还没开始翻文件管理器。
-#   实现里用的是 rmdir（只能删空目录），所以不存在"误删有内容的目录"这种事故。
-_clean=$(clean_empty_dirs)
-fish_log "空文件夹清理完成：$_clean 个"
 
 fish_log "══ post-fs-data 结束 ══"
 fish_log "🐟 虚标处理完了。红烧肉呢？"

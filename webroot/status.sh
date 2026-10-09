@@ -104,9 +104,17 @@ out "ANIM_TRANS" "$(settings_get transition_animation_scale)"
 out "ANIM_DUR"   "$(settings_get animator_duration_scale)"
 
 # ── Wear OS ──
-[ -f /system/framework/com.google.android.wearable.jar ] && out "WEAR_JAR" "1" || out "WEAR_JAR" "0"
-[ -f /system/framework/wear-service.jar ] && out "WEAR_SVC" "1" || out "WEAR_SVC" "0"
-[ -f /system/etc/permissions/com.google.android.wearable.xml ] && out "WEAR_XML" "1" || out "WEAR_XML" "0"
+# ⚠ 必须用 mount_proof，不能用 [ -f ]：原厂 ROM 本来就有同名文件时 [ -f ] 永远为真，
+#   会让状态页显示"就绪"而体检报告显示"未挂载"，两边打架。
+_wear=1
+for _wf in system/framework/com.google.android.wearable.jar \
+           system/framework/wear-service.jar \
+           system/etc/permissions/com.google.android.wearable.xml; do
+    case "$(mount_proof "$_wf")" in yes:*) ;; *) _wear=0 ;; esac
+done
+out "WEAR_JAR" "$([ "$_wear" = "1" ] && echo 1 || echo 0)"
+out "WEAR_SVC" "$_wear"
+out "WEAR_XML" "$_wear"
 
 # ── 电池 ──
 out "BATT_CAP" "$(batt_read capacity)"

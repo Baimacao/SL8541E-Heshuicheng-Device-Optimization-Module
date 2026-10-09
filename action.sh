@@ -19,11 +19,14 @@ MODDIR="${MODDIR:-${0%/*}}"
 
 # ── 先看有没有更新（根管理器基本不给按钮传参，所以 install 只能靠
 #    `sh action.sh install` 手动触发，见 README 的"手动更新"一节）──
-UPD=$(sh "$MODDIR/lib/install.sh" "${1:-check}" 2>/dev/null)
+UPD=$(sh "$MODDIR/lib/install.sh" "${1:-}" 2>/dev/null)
 UPD_STATUS=$(echo "$UPD" | grep '^STATUS=' | cut -d= -f2)
 UPD_RESULT=$(echo "$UPD" | grep '^RESULT=' | cut -d= -f2)
 UPD_REMOTE=$(echo "$UPD" | grep '^REMOTE=' | cut -d= -f2)
 
+# ⚠ 卡片上的「操作」只做**检查**：install.sh 不传参时默认走 check 分支。
+#   安装要走根管理器的「更新」按钮（读 update-*.json），或命令行
+#   `sh /data/adb/modules/SL8541E_Config_Fix/lib/install.sh install`。
 case "$UPD_STATUS" in
     newer)  UPD_LINE="有新版本 v$UPD_REMOTE 🆕" ;;
     same)   UPD_LINE="已是最新 ✓" ;;
@@ -32,7 +35,7 @@ case "$UPD_STATUS" in
     *)      UPD_LINE="未检查" ;;
 esac
 case "$UPD_RESULT" in
-    need_confirm)     UPD_LINE="$UPD_LINE → 再点一次「操作」即安装" ;;
+    need_confirm)     UPD_LINE="$UPD_LINE → 用根管理器的「更新」按钮安装" ;;
     installed)        UPD_LINE="✅ 已安装 v$UPD_REMOTE，重启后生效" ;;
     installed_apatch) UPD_LINE="✅ 已装 v$UPD_REMOTE（APatch 目录级兜底），重启后生效" ;;
     manual_needed)    UPD_LINE="已下载 v$UPD_REMOTE，需去管理器手动安装" ;;
@@ -150,7 +153,7 @@ echo "  拥塞算法：       $(cat /proc/sys/net/ipv4/tcp_congestion_control 2>
 echo "  rwnd 属性：      $(ok_fail net.tcp.default_init_rwnd 256)"
 echo "  hosts 挂载：     $([ -f /system/etc/hosts ] && echo '在 ✓' || echo '不在 ✗')"
 echo "  github.com IP：  $(grep -E '^[0-9.]+[[:space:]]+github\.com' /system/etc/hosts 2>/dev/null | head -1 | tr -s ' ' | cut -d' ' -f1)"
-echo "  hosts 条目数：   $(grep -vc '^\s*#\|^\s*$' /system/etc/hosts 2>/dev/null)"
+echo "  hosts 条目数：   $(grep -vc '^[[:space:]]*#\|^[[:space:]]*$' /system/etc/hosts 2>/dev/null)"
 if [ -f "$MODDIR/.dnsguard.pid" ] && [ -d "/proc/$(cat "$MODDIR/.dnsguard.pid" 2>/dev/null | tr -d ' \n')" ]; then
     echo "  DNS 守护：       运行中 ✓"
 else

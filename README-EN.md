@@ -32,41 +32,36 @@ and it shuts the telemetry down on the way.
 
 ---
 
-## What's new in v1.9
+## What's new in v2.0
 
-### 1. Charging now retries with a bound (and never lies)
+### 1. Animation: now three full cycles (as requested)
 
-The v1.8 evidence log proved all four nodes read `500000 -> 500000` -- the **nodes cannot be
-written**, the script did run. Some drivers keep the charging nodes read-only early in boot and
-unlock them later, so writes now retry at most 5 times, 4 seconds apart, touching only the nodes
-that have not reached the target yet, and stop early on full success.
+No guard process. Instead, **three rounds**, each one a complete two-step:
 
-If every attempt fails it says so plainly (`retried N times, still not writable -> the node is
-probably read-only`) and **never reports a false success**.
-
-### 2. New `diagnose.sh` for one-shot evidence
-
-```bash
-su -c 'sh /data/adb/modules/SL8541E_Config_Fix/diagnose.sh' > /sdcard/diag.txt
+```
+round 1: set all to 1.0 -> wait 6s -> set all to 0.75 / 0.75 / 0.5
+round 2: set all to 1.0 -> wait 6s -> set all to 0.75 / 0.75 / 0.5
+round 3: set all to 1.0 -> wait 6s -> set all to 0.75 / 0.75 / 0.5
 ```
 
-Reports node permissions/writability, a real write attempt including stderr, a full search for
-other `current` nodes, charging-related dmesg lines, charger online state, prop.list format and
-network reachability.
+This is **not** "reset once, then write the targets three times" -- every round resets first and
+then lands the value, for 9 reset writes and 9 target writes in total. The whole block sits at the
+end of `service.sh`, with `wait_boot()` guaranteeing it runs **after boot completes**.
 
-### 3. DNS guardian: less noise, fixed probing
+> Why the reset first: on this ROM writing the target directly does not stick; you must write 1.0
+> so the system registers the current value, then write again a few seconds later. Three rounds
+> means three complete reset-and-land cycles.
 
-It used to log "unreachable" every 30 minutes -- thousands of lines a week. **The test itself was
-wrong**: pinging a *hostname* to judge connectivity is circular when DNS is what is broken. It now
-pings DNS-free IPs first to decide whether the network works at all, logs only on **state change**,
-and **reads the hosts file back** after writing -- a failed bind is reported honestly.
+### 2. Removed the boot-time empty-folder cleanup
 
-### 4. Build-time preflight validation
+Deleted entirely as requested: the `clean_empty_dirs()` function, the `CLEAN_DIRS` / `CLEAN_SKIP`
+configuration, its step in `post-fs-data.sh`, and the matching WebUI section -- no leftovers.
 
-The v1.8 package with 9 malformed `prop.list` rows was only caught after release; that class of
-error belongs in the build. `preflight` now enforces exactly 5 columns per row, no non-ASCII in the
-value column, the seven required `module.prop` fields, key properties present, and no runtime
-artifacts in the source tree.
+### 3. Logic audit and copy cleanup
+
+A full pass over the scripts, property list, report items and WebUI fixed stale wording.
+The Wear OS section of the report now states its **mount evidence** (`/proc/mounts` entries /
+size / content check) instead of treating "the file exists" as "mounted".
 
 ## Features
 
@@ -138,8 +133,8 @@ The module checks GitHub Releases for newer versions — **no login, no token re
 
 | Action | Result |
 |---|---|
-| Tap the **Action** button once | checks for an update; if one exists, the target version is remembered |
-| **Tap it again** (within 3 min) | only the second tap downloads and installs — deliberately two-step, to prevent fat-fingering |
+| Tap the **Action** button | checks for an update (report only) |
+| **Use the Update button** | the root manager's native update button, reading `update-*.json` |
 | Reboot | takes effect |
 
 Or run it manually (easier to watch):
@@ -249,7 +244,7 @@ SL8541E_Config_Fix/
 
 ## Installation
 
-1. Download `SL8541E_Config_Fix_v1.3.zip`
+1. Download the package matching your device (table below)
 2. Root manager → Modules → Install from storage
 3. **Reboot** (no reboot = not installed; everything hangs off the boot hooks)
 4. Tap **WebUI** for the status page, or **Action** for the plain-text report

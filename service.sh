@@ -21,11 +21,21 @@ MODDIR="${MODDIR:-${0%/*}}"
 
 LOCK="$STATE.lock"
 mkdir -p "$MODDIR" 2>/dev/null
+# 锁要带"本次开机"标识：否则上次 service.sh 被强杀（trap 没跑到）而锁文件留在
+# /data 上时，之后**每次开机**都会直接 exit 0 —— 动画、sysctl、DNS、状态页全部静默不执行，
+# 日志只有一行"已在运行"。这是最隐蔽的单点故障。
+_BOOT_ID=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null | tr -d ' \r\n')
+[ -n "$_BOOT_ID" ] || _BOOT_ID=$(cat /proc/uptime 2>/dev/null | cut -d' ' -f1)
 if [ -f "$LOCK" ]; then
-    fish_log "service.sh 已在运行（锁存在），本次退出"
-    exit 0
+    _LOCK_BOOT=$(cat "$LOCK" 2>/dev/null | tr -d ' \r\n')
+    if [ -n "$_LOCK_BOOT" ] && [ "$_LOCK_BOOT" = "$_BOOT_ID" ]; then
+        fish_log "service.sh 已在运行（同一开机内的锁），本次退出"
+        exit 0
+    fi
+    fish_log "发现上次开机残留的锁，清除后继续（避免静默失联）"
 fi
 : > "$LOCK" 2>/dev/null
+printf '%s\n' "$_BOOT_ID" >> "$LOCK" 2>/dev/null
 trap 'rm -f "$LOCK" 2>/dev/null' EXIT
 
 fish_log "── service.sh 开始 ──"
@@ -33,7 +43,8 @@ fish_log "── service.sh 开始 ──"
 # ⚠ 必须先等开机完成，再动手。这不是"保险起见"，是硬前置：
 #   · service.sh 是 late_start，此刻 system_server 还没把设置项初始化完，
 #     现在写动画缩放会被它随后的初始化覆盖掉 —— 白写
-#   · 动画的"两步法"（先 1.0 再目标值）整段依赖这个时序，提前跑等于两步都白做
+#   · 动画的三轮循环（每轮"先全部 1.0 再全部目标值"）整段依赖这个时序，
+#     提前跑等于三轮都白做
 #   · 属性类操作倒是越早越好，但那些在 post-fs-data 里已经做过了
 #   v1.2 原本就有这个循环，v1.3 重构时被我漏掉了 —— 别再删。
 wait_boot
@@ -79,7 +90,10 @@ charge_retry service 3 5
 
 # 充电也要常驻复写：实测写成功过（3000 mA），但下次开机又回到 500 ——
 # 同一个"系统周期性回写"机制。后台跑 20 轮 × 30 秒 ≈ 10 分钟，只补偏离的节点。
+# ⚠ 后台进程必须留 pidfile：否则卸载后它会一直活着（孤儿进程）。
+#   用户的要求是"动画不要守护进程"，充电这个是另一回事，但同样要能收干净。
 charge_keepalive service 20 30 &
+echo $! > "$MODDIR/.charge-keepalive.pid" 2>/dev/null
 
 # ── 5. 动态 DNS 守护 ──
 GUARD="$MODDIR/lib/dns-guard.sh"
@@ -120,23 +134,20 @@ settings_put adb_enabled 1 2 >/dev/null 2>&1
 [ -f "$MODDIR/webroot/gen_status.sh" ] && sh "$MODDIR/webroot/gen_status.sh" 2>/dev/null
 fish_log "WebUI 状态页已生成"
 
-# ── 8. 动画：三步覆盖（安排在最后，因为它要长时间 sleep）──────────────────
-#   用户实测反馈（v1.10 之后）：**两次覆盖改成三次**。
-#     · 只写两次时，system_server 会在我们写完之后再覆盖一遍 → 设置看着是 0.75/0.5，
-#       实际没生效（日志里"写入成功"却是假象，这就是"动画改动失效"的原因）
-#     · 第三次写入要放在**最晚**的时机：等系统那一轮初始化彻底过去，再按一次
+# ── 8. 动画：三次完整循环（用户指定做法，安排在最后）──────────────────────
+#   用户明确要求（v2.0）：
+#     · **不要进程守护** —— 不要后台常驻、不要定期检查
+#     · **三次完整循环**：每一次都先"全部设成 1.0"，再"全部设成目标值"
+#       即：1.0 → 0.75/0.5，重复三遍（不是"写一次 1.0 再写三次目标值"）
+#     · 尽量安排在**开机成功之后** —— 由上面的 wait_boot() 保证
 #
-#   现在的顺序（三步，每步之间 6 秒）：
-#       1) 归位 1.0     —— 让系统把当前值认下来（直接写目标值不落盘）
-#       2) 写目标值     —— 这一步才让"动画变化"被真正观察到
-#       3) 再按一次目标值 —— 覆盖掉 system_server 随后的那次回写，把它锁死
+#   为什么是"每次都要先归位 1.0"：这台 ROM 上直接写目标值不落盘，
+#   必须先写 1.0 让系统把当前值认下来，隔几秒再写目标值才会真正写进去。
+#   所以三次循环 = 三次完整的"归位 + 落盘"，比在末尾多按一次更符合它的机制。
 #
-#   仍然保持朴素：不重试、不写 XML、不做读回判断驱动分支（v1.5 加了那些反而坏）。
-#   唯一该调的就是**写几次**和**间隔多久**。
-#
-#   必须**在开机完成之后**执行 —— 由上面的 wait_boot() 保证。
+#   保持朴素：不重试、不写 XML、不做读回分支（v1.5 加那些反而失效）。
 
-# 记录动手前的现场（纯读取，不改变任何状态），出问题好定位
+# 记录现场（纯读取，不改变状态），出问题好定位
 _anim_diag() {
     _tag="$1"
     fish_log "动画[$_tag] 窗口=$(settings_get window_animation_scale) 过渡=$(settings_get transition_animation_scale) 时长=$(settings_get animator_duration_scale)"
@@ -144,63 +155,31 @@ _anim_diag() {
 
 _anim_diag "动手前"
 
-# ── 第 1 次：归位到 1.0 ──
-settings put global window_animation_scale 1.0
-settings put global transition_animation_scale 1.0
-settings put global animator_duration_scale 1.0
-fish_log "动画第 1 次完成（归位 1.0），等 6 秒"
-sleep 6
-
-# ── 第 2 次：写目标值 ──
-settings put global window_animation_scale 0.75
-settings put global transition_animation_scale 0.75
-settings put global animator_duration_scale 0.5
-_anim_diag "第 2 次后"
-fish_log "动画第 2 次完成（目标值），再等 6 秒后第 3 次锁定"
-sleep 6
-
-# ── 第 3 次：再按一次目标值，覆盖 system_server 随后的回写 ──
-settings put global window_animation_scale 0.75
-settings put global transition_animation_scale 0.75
-settings put global animator_duration_scale 0.5
-_anim_diag "第 3 次后（最终）"
-
-# ── 9. 动画守护：开机后持续把跑掉的值拉回来 ────────────────────────────────
-#   实测证据（v1.11，用户截图 + fix.log）：
-#       16:37:01  第 3 次写入完成，读回 窗口=0.75 过渡=0.75 时长=0.5
-#       16:45:26  系统设置界面显示三项全是 1.0x        ← 8 分钟内被改回去了
-#   所以"写几次"根本不是关键 —— **系统会周期性回写**，
-#   写 N 次只能赢 N 次，之后照样被覆盖。
-#   同一个机制也解释了充电：写成功过（3000 mA），下次开机又变回 500。
-#
-#   真正的解法是**持续复写**：从"12000快充"模块学到的做法 ——
-#   它的 charge.sh 就是个常驻循环（充电时每秒重写、否则每 2 分钟）。
-#   这里放后台跑一段时间（默认 12 轮 × 60 秒 ≈ 12 分钟，全是轻量读取），
-#   只在发现值偏离时才写，不刷屏、不空转。
-#
-#   为什么放后台：service.sh 已经跑完主要工作，不能让守护把脚本卡住。
-_anim_guard() {
-    _rounds="${1:-12}"; _gap="${2:-60}"
-    _i=0
-    while [ "$_i" -lt "$_rounds" ]; do
-        _fix=""
-        [ "$(settings_get window_animation_scale)"     = "0.75" ] || _fix="$_fix window_animation_scale=0.75"
-        [ "$(settings_get transition_animation_scale)" = "0.75" ] || _fix="$_fix transition_animation_scale=0.75"
-        [ "$(settings_get animator_duration_scale)"    = "0.5"  ] || _fix="$_fix animator_duration_scale=0.5"
-        if [ -n "$_fix" ]; then
-            for _kv in $_fix; do
-                settings put global "${_kv%%=*}" "${_kv#*=}"
-            done
-            fish_log "动画守护：第 $((_i+1)) 轮发现被改回，已纠正（$(echo "$_fix" | wc -w) 项）"
-        fi
-        _i=$((_i + 1))
-        [ "$_i" -lt "$_rounds" ] && sleep "$_gap"
-    done
-    fish_log "动画守护结束（$_rounds 轮）：窗口=$(settings_get window_animation_scale) 时长=$(settings_get animator_duration_scale)"
+# 一轮 = 先全部 1.0，隔 6 秒，再全部目标值
+_anim_pass() {
+    _n="$1"
+    # ① 全部归位 1.0
+    settings put global window_animation_scale 1.0
+    settings put global transition_animation_scale 1.0
+    settings put global animator_duration_scale 1.0
+    sleep 6
+    # ② 全部写目标值
+    settings put global window_animation_scale 0.75
+    settings put global transition_animation_scale 0.75
+    settings put global animator_duration_scale 0.5
+    _anim_diag "第 $_n 轮后"
 }
 
-# 后台常驻：不阻塞 service.sh 收尾
-_anim_guard 12 60 &
+_anim_pass 1
+fish_log "动画第 1 轮完成（1.0 → 0.75/0.5），等 6 秒进第 2 轮"
+sleep 6
+
+_anim_pass 2
+fish_log "动画第 2 轮完成，等 6 秒进第 3 轮"
+sleep 6
+
+_anim_pass 3
+fish_log "动画第 3 轮完成（三轮结束）"
 
 fish_log "── service.sh 结束 ──"
 fish_log "🐟 巡检完毕。摸鱼去了，红烧肉记得叫我。"
