@@ -77,6 +77,10 @@ fi
 #   注意不能写 `charge_retry ... | read _x`：read 在子 shell 里，拿不到值。
 charge_retry service 3 5
 
+# 充电也要常驻复写：实测写成功过（3000 mA），但下次开机又回到 500 ——
+# 同一个"系统周期性回写"机制。后台跑 20 轮 × 30 秒 ≈ 10 分钟，只补偏离的节点。
+charge_keepalive service 20 30 &
+
 # ── 5. 动态 DNS 守护 ──
 GUARD="$MODDIR/lib/dns-guard.sh"
 PIDFILE="$MODDIR/.dnsguard.pid"
@@ -160,6 +164,43 @@ settings put global window_animation_scale 0.75
 settings put global transition_animation_scale 0.75
 settings put global animator_duration_scale 0.5
 _anim_diag "第 3 次后（最终）"
+
+# ── 9. 动画守护：开机后持续把跑掉的值拉回来 ────────────────────────────────
+#   实测证据（v1.11，用户截图 + fix.log）：
+#       16:37:01  第 3 次写入完成，读回 窗口=0.75 过渡=0.75 时长=0.5
+#       16:45:26  系统设置界面显示三项全是 1.0x        ← 8 分钟内被改回去了
+#   所以"写几次"根本不是关键 —— **系统会周期性回写**，
+#   写 N 次只能赢 N 次，之后照样被覆盖。
+#   同一个机制也解释了充电：写成功过（3000 mA），下次开机又变回 500。
+#
+#   真正的解法是**持续复写**：从"12000快充"模块学到的做法 ——
+#   它的 charge.sh 就是个常驻循环（充电时每秒重写、否则每 2 分钟）。
+#   这里放后台跑一段时间（默认 12 轮 × 60 秒 ≈ 12 分钟，全是轻量读取），
+#   只在发现值偏离时才写，不刷屏、不空转。
+#
+#   为什么放后台：service.sh 已经跑完主要工作，不能让守护把脚本卡住。
+_anim_guard() {
+    _rounds="${1:-12}"; _gap="${2:-60}"
+    _i=0
+    while [ "$_i" -lt "$_rounds" ]; do
+        _fix=""
+        [ "$(settings_get window_animation_scale)"     = "0.75" ] || _fix="$_fix window_animation_scale=0.75"
+        [ "$(settings_get transition_animation_scale)" = "0.75" ] || _fix="$_fix transition_animation_scale=0.75"
+        [ "$(settings_get animator_duration_scale)"    = "0.5"  ] || _fix="$_fix animator_duration_scale=0.5"
+        if [ -n "$_fix" ]; then
+            for _kv in $_fix; do
+                settings put global "${_kv%%=*}" "${_kv#*=}"
+            done
+            fish_log "动画守护：第 $((_i+1)) 轮发现被改回，已纠正（$(echo "$_fix" | wc -w) 项）"
+        fi
+        _i=$((_i + 1))
+        [ "$_i" -lt "$_rounds" ] && sleep "$_gap"
+    done
+    fish_log "动画守护结束（$_rounds 轮）：窗口=$(settings_get window_animation_scale) 时长=$(settings_get animator_duration_scale)"
+}
+
+# 后台常驻：不阻塞 service.sh 收尾
+_anim_guard 12 60 &
 
 fish_log "── service.sh 结束 ──"
 fish_log "🐟 巡检完毕。摸鱼去了，红烧肉记得叫我。"

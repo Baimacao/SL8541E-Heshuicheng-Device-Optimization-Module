@@ -191,17 +191,23 @@ echo "  时长 0.5：       $(anim_state animator_duration_scale 0.5)"
 echo "──────────────────"
 echo "Wear OS 库："
 WEAR_OK=1
-for f in /system/framework/com.google.android.wearable.jar \
-         /system/framework/wear-service.jar \
-         /system/etc/permissions/com.google.android.wearable.xml; do
-    if [ -f "$f" ]; then
-        echo "  $(basename "$f")：已挂载 ✓"
-    else
-        echo "  $(basename "$f")：未挂载 ✗"
-        WEAR_OK=0
-    fi
+for f in system/framework/com.google.android.wearable.jar \
+         system/framework/wear-service.jar \
+         system/etc/permissions/com.google.android.wearable.xml; do
+    _proof=$(mount_proof "$f")
+    case "$_proof" in
+        yes:*) echo "  $(basename "$f")：已挂载 ✓ [${_proof#yes:}]" ;;
+        *)     echo "  $(basename "$f")：未挂载 ✗ [${_proof#no:}]"; WEAR_OK=0 ;;
+    esac
 done
-[ "$WEAR_OK" = "1" ] && echo "  总体：全部就绪 ✓" || echo "  总体：有缺失 ✗"
+if [ "$WEAR_OK" = "1" ]; then
+    echo "  总体：全部就绪 ✓"
+else
+    echo "  总体：有缺失 ✗"
+    _mc=$(grep -c 'SL8541E_Config_Fix' /proc/mounts 2>/dev/null)
+    echo "  /proc/mounts 里的本模块条目数：${_mc:-0}"
+    echo "  （0 = 整棵 system 树都没被 magic mount，不是单个文件的问题）"
+fi
 echo "──────────────────"
 echo "🔋 电池"
 echo "  电量：  $(batt_read capacity | sed 's/$/%/' | sed 's/^%$/未知/')"

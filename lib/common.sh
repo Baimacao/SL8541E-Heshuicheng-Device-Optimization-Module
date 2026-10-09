@@ -147,6 +147,45 @@ prop_each() {
     return 0
 }
 
+# ── magic mount 取证 ───────────────────────────────────────────────────────
+# `[ -f /system/... ]` **不能**用来判断模块文件有没有挂上去：原厂 ROM 本来就有
+# 同名文件时它永远为真。（体检报告里"Wear OS 库：已挂载 ✓"就是这么来的 ——
+# 三个版本都在报一个从没验证过的结论。）
+#
+# 这里给三个层次的证据，任一成立才算挂上：
+#   1. /proc/mounts 里出现本模块路径
+#   2. 目标文件大小 == 模块内同名文件大小（且大小不是 0）
+#   3. 目标文件内容 sha256 == 模块内文件（有 sha256sum 时）
+#
+# mount_proof <模块内相对路径> → 回显 "yes:方式" / "no:原因"
+mount_proof() {
+    _rel="$1"
+    _src="$MODDIR/$_rel"
+    _dst="/$_rel"
+    [ -f "$_src" ] || { echo "no:模块内无此文件"; return; }
+    [ -e "$_dst" ] || { echo "no:目标不存在"; return; }
+
+    # 证据 1：挂载表里有没有本模块
+    if grep -q "SL8541E_Config_Fix" /proc/mounts 2>/dev/null; then
+        echo "yes:挂载表"
+        return
+    fi
+
+    # 证据 2/3：内容比对
+    _sz_src=$(wc -c < "$_src" 2>/dev/null | tr -d ' ')
+    _sz_dst=$(wc -c < "$_dst" 2>/dev/null | tr -d ' ')
+    if [ -n "$_sz_src" ] && [ "$_sz_src" = "$_sz_dst" ] && [ "$_sz_src" != "0" ]; then
+        if command -v sha256sum >/dev/null 2>&1; then
+            _h1=$(sha256sum "$_src" 2>/dev/null | cut -d' ' -f1)
+            _h2=$(sha256sum "$_dst" 2>/dev/null | cut -d' ' -f1)
+            if [ -n "$_h1" ] && [ "$_h1" = "$_h2" ]; then echo "yes:内容一致"; return; fi
+            echo "no:内容不同(${_sz_src}B vs ${_sz_dst}B)"; return
+        fi
+        echo "yes:大小一致"
+        return
+    fi
+    echo "no:大小不同(${_sz_src:-?}B vs ${_sz_dst:-?}B)"
+}
 # prop_list_count → 清单里的有效条目数
 #   为什么不用 `grep -vc '^\s*#\|^\s*$'`：那是"数不匹配的行数"，语义绕；
 #   而且非 GNU grep（Android toybox）对 `\s` 的支持不一致 —— 真机上就出现了空值。
@@ -210,9 +249,14 @@ charge_boost() {
         fi
         _hit=$((_hit+1))
         _before=$(node_int "$_n"); [ -n "$_before" ] || _before="读不到"
+        # ★ 先 chmod 再写 —— 从"12000快充"模块学到的（它的 key_echo 就是先 chmod 0644）。
+        #   sysfs 节点的权限决定它能不能被写；只写不改权限的话，
+        #   非 root 上下文或权限被收紧时会静默失败（写入返回 0、值却不变）。
+        _cerr=$(chmod 0644 "$_n" 2>&1)
         # 不吞 stderr：写不进去的原因（只读 / permission denied）必须留下
         _err=$(echo "$CHG_TARGET" > "$_n" 2>&1)
         _after=$(node_int "$_n"); [ -n "$_after" ] || _after="读不到"
+        [ -n "$_cerr" ] && fish_log "充电[$_tag] ⚠ chmod 失败：$_cerr"
 
         _name=$(basename "$(dirname "$_n")")/$(basename "$_n")
         _summary="$_summary ${_name}:${_before}→${_after}"
@@ -224,6 +268,35 @@ charge_boost() {
     echo "$_ok"
 }
 
+# charge_keepalive <标签> [轮数=20] [间隔秒=30]
+#   从"12000快充"模块学到的：它的 charge.sh 是个 **常驻循环** ——
+#   充电时每秒重写一次、没充电时每 2 分钟重写一次。
+#   这说明**系统的充电驱动会周期性地把节点改回自己的值**，
+#   所以"开机写一次"注定被覆盖（我们实测：写成功 0.75，8 分钟后变回 1.0；
+#   充电值也时好时坏 —— 都是同一个机制）。
+#
+#   本函数在后台常驻一段时间（默认约 10 分钟），只重写"偏离目标值"的节点，
+#   全部达标时几乎不做事。轮数有限，不会永久占资源。
+charge_keepalive() {
+    _tag="$1"; _rounds="${2:-20}"; _gap="${3:-30}"
+    _i=0
+    while [ "$_i" -lt "$_rounds" ]; do
+        _todo=""
+        for _n in $CHG_NODES; do
+            [ -e "$_n" ] || continue
+            _v=$(node_int "$_n")
+            [ "$_v" = "$CHG_TARGET" ] || _todo="$_todo $_n"
+        done
+        if [ -n "$_todo" ]; then
+            _ok=$(charge_boost "$_tag/第$((_i+1))轮" "$_todo")
+            [ "${_ok:-0}" -gt 0 ] 2>/dev/null && fish_log "充电[$_tag] 复写生效 $_ok 个（第 $((_i+1)) 轮）"
+        fi
+        _i=$((_i + 1))
+        [ "$_i" -lt "$_rounds" ] && sleep "$_gap"
+    done
+    fish_log "充电[$_tag] 常驻复写结束（$_rounds 轮）"
+    return 0
+}
 # charge_retry <标签> [最多尝试次数=5] [间隔秒=4]
 #   有些驱动在开机早期对充电节点是只读的，过一段时间才解锁；"写一次就放弃"
 #   等于白丢机会。这里做**有界**重试：每次只补还没到目标值的节点，全成功即提前退出。
