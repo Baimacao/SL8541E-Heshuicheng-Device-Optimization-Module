@@ -116,18 +116,21 @@ settings_put adb_enabled 1 2 >/dev/null 2>&1
 [ -f "$MODDIR/webroot/gen_status.sh" ] && sh "$MODDIR/webroot/gen_status.sh" 2>/dev/null
 fish_log "WebUI 状态页已生成"
 
-# ── 8. 动画：两步法（安排在最后，因为它要长时间 sleep）────────────────────
-#   用户实测反馈（v1.6 之后）：
-#     · 两步法本身绝对可行 —— 不要动它的结构
-#     · **两步之间的间隔要够长**，1 秒不够 → 实测 **6 秒** 可用
-#     · 必须**在开机完成之后**执行 —— 这一条由上面的 wait_boot() 保证
+# ── 8. 动画：三步覆盖（安排在最后，因为它要长时间 sleep）──────────────────
+#   用户实测反馈（v1.10 之后）：**两次覆盖改成三次**。
+#     · 只写两次时，system_server 会在我们写完之后再覆盖一遍 → 设置看着是 0.75/0.5，
+#       实际没生效（日志里"写入成功"却是假象，这就是"动画改动失效"的原因）
+#     · 第三次写入要放在**最晚**的时机：等系统那一轮初始化彻底过去，再按一次
 #
-#   所以这里刻意保持"朴素"：不重试、不写 XML、不做读回判断驱动分支。
-#   v1.5 那版加了读回校验+重试，实测反而失效 —— 教训是这套时序很脆，
-#   中间插任何额外操作都可能坏掉，唯一该调的就是"等多久"。
+#   现在的顺序（三步，每步之间 6 秒）：
+#       1) 归位 1.0     —— 让系统把当前值认下来（直接写目标值不落盘）
+#       2) 写目标值     —— 这一步才让"动画变化"被真正观察到
+#       3) 再按一次目标值 —— 覆盖掉 system_server 随后的那次回写，把它锁死
 #
-#   为什么直接写不生效、必须先归位：这台 ROM 上直接写缩放值不会落盘，
-#   得先写 1.0 让系统把当前值认下来，隔几秒再写目标值才会真正写进去。
+#   仍然保持朴素：不重试、不写 XML、不做读回判断驱动分支（v1.5 加了那些反而坏）。
+#   唯一该调的就是**写几次**和**间隔多久**。
+#
+#   必须**在开机完成之后**执行 —— 由上面的 wait_boot() 保证。
 
 # 记录动手前的现场（纯读取，不改变任何状态），出问题好定位
 _anim_diag() {
@@ -137,20 +140,26 @@ _anim_diag() {
 
 _anim_diag "动手前"
 
-# ── 第一步：归位到 1.0 ──
+# ── 第 1 次：归位到 1.0 ──
 settings put global window_animation_scale 1.0
 settings put global transition_animation_scale 1.0
 settings put global animator_duration_scale 1.0
-fish_log "动画第一步完成（已归位 1.0），等 6 秒再写目标值"
-
-# ★ 关键：这一步的等待时间要够长。1 秒会失效，6 秒实测可行。
+fish_log "动画第 1 次完成（归位 1.0），等 6 秒"
 sleep 6
 
-# ── 第二步：写目标值 ──
+# ── 第 2 次：写目标值 ──
 settings put global window_animation_scale 0.75
 settings put global transition_animation_scale 0.75
 settings put global animator_duration_scale 0.5
-_anim_diag "写完后"
+_anim_diag "第 2 次后"
+fish_log "动画第 2 次完成（目标值），再等 6 秒后第 3 次锁定"
+sleep 6
+
+# ── 第 3 次：再按一次目标值，覆盖 system_server 随后的回写 ──
+settings put global window_animation_scale 0.75
+settings put global transition_animation_scale 0.75
+settings put global animator_duration_scale 0.5
+_anim_diag "第 3 次后（最终）"
 
 fish_log "── service.sh 结束 ──"
 fish_log "🐟 巡检完毕。摸鱼去了，红烧肉记得叫我。"

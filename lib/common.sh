@@ -104,15 +104,22 @@ prop_each() {
     _n=0; _bad=0
 
     while IFS='|' read -r _f1 _f2 _f3 _f4 _f5 _f6; do
-        case "$_f1" in ''|\#*) continue ;; esac
-        _f1=$(echo "$_f1" | tr -d ' \t')
-        _f2=$(echo "$_f2" | tr -d ' \t')
-        _f3=$(echo "$_f3" | tr -d ' \t')
-        _f4=$(echo "$_f4" | tr -d ' \t')
-        _f5=$(echo "$_f5" | tr -d ' \t')
+        # ⚠ 顺序很重要：**先剥空白与 \r，再判空行/注释**。
+        #   为什么：CRLF 文件里的空行，在 IFS='|' 下 _f1 会是 "\r" 而不是空串 ——
+        #   若先判 `case "$_f1" in '')` 就漏掉它，随后被判成"列数不合法"。
+        #   真机日志里那句"9 行列数不合法，已跳过"，这 9 行其实全是**空行**。
+        #   解析器必须对输入格式免疫，不能指望文件永远干净。
+        _f1=$(printf '%s' "$_f1" | tr -d ' \t\r')
+        [ -z "$_f1" ] && continue                                  # 空行
+        case "$_f1" in \#*) continue ;; esac                        # 注释行
+        _f2=$(printf '%s' "$_f2" | tr -d ' \t\r')
+        _f3=$(printf '%s' "$_f3" | tr -d ' \t\r')
+        _f4=$(printf '%s' "$_f4" | tr -d ' \t\r')
+        _f5=$(printf '%s' "$_f5" | tr -d ' \t\r')
+        _f6=$(printf '%s' "$_f6" | tr -d ' \t\r')
 
         # 列数判断：5 列 = 带 variant；4 列 = 老格式，variant 视为 all
-        if [ -n "$_f6" ] || [ -z "$_f4" ]; then
+        if [ -n "$_f6" ] || [ -z "$_f3" ]; then
             _bad=$((_bad + 1)); continue
         elif [ -n "$_f5" ]; then
             _var="$_f3"; _val="$_f4"          # scope|key|variant|value|note
