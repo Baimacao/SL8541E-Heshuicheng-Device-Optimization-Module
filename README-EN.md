@@ -32,36 +32,33 @@ and it shuts the telemetry down on the way.
 
 ---
 
-## What's new in v2.0
+## What's new in v2.1
 
-### 1. Animation: now three full cycles (as requested)
+### Animation: fully restored to the 1.x implementation
 
-No guard process. Instead, **three rounds**, each one a complete two-step:
+As requested, the animation code is back to the block used by v1.1 through v1.6,
+**character for character**:
 
+```sh
+# animation fix (two-step)
+settings put global window_animation_scale 1.0
+settings put global transition_animation_scale 1.0
+settings put global animator_duration_scale 1.0
+sleep 1
+
+settings put global window_animation_scale 0.75
+settings put global transition_animation_scale 0.75
+settings put global animator_duration_scale 0.5
 ```
-round 1: set all to 1.0 -> wait 6s -> set all to 0.75 / 0.75 / 0.5
-round 2: set all to 1.0 -> wait 6s -> set all to 0.75 / 0.75 / 0.5
-round 3: set all to 1.0 -> wait 6s -> set all to 0.75 / 0.75 / 0.5
-```
 
-This is **not** "reset once, then write the targets three times" -- every round resets first and
-then lands the value, for 9 reset writes and 9 target writes in total. The whole block sits at the
-end of `service.sh`, with `wait_boot()` guaranteeing it runs **after boot completes**.
+**A single pass** -- no loop, no guard process, no retry, no XML fallback. It sits at the end of
+`service.sh`, with `wait_boot()` guaranteeing it runs **after boot completes**.
 
-> Why the reset first: on this ROM writing the target directly does not stick; you must write 1.0
-> so the system registers the current value, then write again a few seconds later. Three rounds
-> means three complete reset-and-land cycles.
+> Every variation tried in between (a 6-second gap, three passes, a background guard) has been
+> **reverted** -- the 1.x version is the only one repeatedly confirmed to work on the real device.
 
-### 2. Removed the boot-time empty-folder cleanup
-
-Deleted entirely as requested: the `clean_empty_dirs()` function, the `CLEAN_DIRS` / `CLEAN_SKIP`
-configuration, its step in `post-fs-data.sh`, and the matching WebUI section -- no leftovers.
-
-### 3. Logic audit and copy cleanup
-
-A full pass over the scripts, property list, report items and WebUI fixed stale wording.
-The Wear OS section of the report now states its **mount evidence** (`/proc/mounts` entries /
-size / content check) instead of treating "the file exists" as "mounted".
+A regression test pins this down: 6 writes total, the target written **exactly once**, the value
+sequence `1.0 1.0 1.0 -> 0.75 0.75 0.5`, plus a source-level check that no loop or guard remains.
 
 ## Features
 

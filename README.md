@@ -40,35 +40,33 @@ persist.sys.cpu=10    # 四核标十核
 
 ---
 
-## v2.0 主要更新
+## v2.1 主要更新
 
-### 1. 动画：改成「三轮完整循环」（按你的要求）
+### 动画：完全恢复成 1.x 原样
 
-去掉进程守护，改成**三轮**，每一轮都是完整的两步：
+按要求把动画实现改回 v1.1 ~ v1.6 一直用的那段，**一字不改**：
 
+```sh
+# 修复动画（两步法）
+settings put global window_animation_scale 1.0
+settings put global transition_animation_scale 1.0
+settings put global animator_duration_scale 1.0
+sleep 1
+
+settings put global window_animation_scale 0.75
+settings put global transition_animation_scale 0.75
+settings put global animator_duration_scale 0.5
 ```
-第 1 轮：全部设成 1.0  → 等 6 秒 → 全部设成 0.75 / 0.75 / 0.5
-第 2 轮：全部设成 1.0  → 等 6 秒 → 全部设成 0.75 / 0.75 / 0.5
-第 3 轮：全部设成 1.0  → 等 6 秒 → 全部设成 0.75 / 0.75 / 0.5
-```
 
-注意这**不是**"写一次 1.0 再写三次目标值" —— 而是每一轮都先归位再落盘，
-共 9 次归位写入 + 9 次目标值写入。整段放在 `service.sh` 最后，
-由 `wait_boot()` 保证**在开机成功之后**执行。
+**只有一遍** —— 不循环、不守护、不重试、不写 XML。
+放在 `service.sh` 最后，由 `wait_boot()` 保证**在开机成功之后**执行。
 
-> 为什么必须先归位：这台 ROM 上直接写目标值不落盘，得先写 1.0 让系统认下当前值，
-> 隔几秒再写才真正写进去。三轮 = 三次完整的"归位 + 落盘"。
+> 中间试过的几种改法（间隔拉到 6 秒、三次覆盖、后台守护进程）**全部撤销** ——
+> 1.x 这版是唯一被真机反复验证过能生效的写法。
 
-### 2. 移除「开机清理空文件夹」功能
-
-按你的要求整个删掉：`clean_empty_dirs()` 函数、`CLEAN_DIRS` / `CLEAN_SKIP` 配置、
-`post-fs-data.sh` 里那一步、WebUI 里对应的说明块 —— 全部清除，无残留。
-
-### 3. 逻辑校验与文案整理
-
-对模块做了一轮完整审计（脚本、属性清单、报告项、WebUI），修正了过时表述。
-体检报告的 Wear OS 段改为**给出挂载依据**（`/proc/mounts` 条目 / 大小 / 内容校验），
-不再是"文件存在就算挂上"。
+回归测试 `_tools/test-animation1x.sh` 钉死这个行为：总写入 **6 次**、
+目标值**只写 1 次**、值序列 = `1.0 1.0 1.0 -> 0.75 0.75 0.5`，
+并在**源码层**检查没有循环/守护函数残留。
 
 ## 功能清单
 

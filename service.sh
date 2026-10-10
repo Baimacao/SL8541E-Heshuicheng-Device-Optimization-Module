@@ -129,57 +129,36 @@ fi
 settings_put adb_enabled 1 2 >/dev/null 2>&1
 
 # ── 7. 生成 WebUI 状态页 ──
-#   放到动画之前：动画那两步之间要 sleep 几十秒，不能让它挡住状态页生成
+#   放到动画之前，别让动画那段 sleep 挡住状态页生成
 #   （否则用户点开 WebUI 会看到上一次开机的旧快照）。
 [ -f "$MODDIR/webroot/gen_status.sh" ] && sh "$MODDIR/webroot/gen_status.sh" 2>/dev/null
 fish_log "WebUI 状态页已生成"
 
-# ── 8. 动画：三次完整循环（用户指定做法，安排在最后）──────────────────────
-#   用户明确要求（v2.0）：
-#     · **不要进程守护** —— 不要后台常驻、不要定期检查
-#     · **三次完整循环**：每一次都先"全部设成 1.0"，再"全部设成目标值"
-#       即：1.0 → 0.75/0.5，重复三遍（不是"写一次 1.0 再写三次目标值"）
-#     · 尽量安排在**开机成功之后** —— 由上面的 wait_boot() 保证
+# ═══════════════════════════════════════════════════════════════════════════
+#  修复动画（两步法）—— **完全按 1.x 原样**（用户指定）
+#  ---------------------------------------------------------------------------
+#  这就是 v1.1 ~ v1.6 一直用的那段实现，一字不改：
+#      1.0 ×3 → sleep 1 → 0.75/0.75/0.5
+#  只有一遍，不循环、不守护、不重试、不写 XML。
 #
-#   为什么是"每次都要先归位 1.0"：这台 ROM 上直接写目标值不落盘，
-#   必须先写 1.0 让系统把当前值认下来，隔几秒再写目标值才会真正写进去。
-#   所以三次循环 = 三次完整的"归位 + 落盘"，比在末尾多按一次更符合它的机制。
+#  用户为这段实现试过好几种改法（加长间隔到 6 秒、三次覆盖、后台守护），
+#  都不如这一版；所以回到原样 —— 这是**唯一被真机反复验证过能生效**的写法。
 #
-#   保持朴素：不重试、不写 XML、不做读回分支（v1.5 加那些反而失效）。
+#  放在 service.sh 最后，由上面的 wait_boot() 保证在开机成功之后执行。
+# ═══════════════════════════════════════════════════════════════════════════
+settings put global window_animation_scale 1.0
+settings put global transition_animation_scale 1.0
+settings put global animator_duration_scale 1.0
+sleep 1
 
-# 记录现场（纯读取，不改变状态），出问题好定位
-_anim_diag() {
-    _tag="$1"
-    fish_log "动画[$_tag] 窗口=$(settings_get window_animation_scale) 过渡=$(settings_get transition_animation_scale) 时长=$(settings_get animator_duration_scale)"
-}
+settings put global window_animation_scale 0.75
+settings put global transition_animation_scale 0.75
+settings put global animator_duration_scale 0.5
 
-_anim_diag "动手前"
-
-# 一轮 = 先全部 1.0，隔 6 秒，再全部目标值
-_anim_pass() {
-    _n="$1"
-    # ① 全部归位 1.0
-    settings put global window_animation_scale 1.0
-    settings put global transition_animation_scale 1.0
-    settings put global animator_duration_scale 1.0
-    sleep 6
-    # ② 全部写目标值
-    settings put global window_animation_scale 0.75
-    settings put global transition_animation_scale 0.75
-    settings put global animator_duration_scale 0.5
-    _anim_diag "第 $_n 轮后"
-}
-
-_anim_pass 1
-fish_log "动画第 1 轮完成（1.0 → 0.75/0.5），等 6 秒进第 2 轮"
-sleep 6
-
-_anim_pass 2
-fish_log "动画第 2 轮完成，等 6 秒进第 3 轮"
-sleep 6
-
-_anim_pass 3
-fish_log "动画第 3 轮完成（三轮结束）"
+W=$(settings_get window_animation_scale)
+T=$(settings_get transition_animation_scale)
+A=$(settings_get animator_duration_scale)
+fish_log "动画值: 窗口=$W 过渡=$T 时长=$A"
 
 fish_log "── service.sh 结束 ──"
 fish_log "🐟 巡检完毕。摸鱼去了，红烧肉记得叫我。"
