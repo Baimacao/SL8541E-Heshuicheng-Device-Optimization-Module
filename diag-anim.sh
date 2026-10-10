@@ -79,6 +79,21 @@ for k in window_animation_scale transition_animation_scale animator_duration_sca
 done
 echo
 
+echo "=== 4b. 设置服务到底是死是活（关键判定）==="
+_alive=0
+settings list global 2>/dev/null | head -1 | grep -q . && _alive=1
+if [ "$_alive" = "1" ]; then
+    echo "  设置服务：**活着**（settings list 能返回内容）"
+else
+    echo "  设置服务：**读不出来**（settings list 返回空）"
+    echo "    → 这台 ROM 上服务处于异常状态。结论："
+    echo "      · 命令路径（settings / cmd settings）都到不了它，读写全废"
+    echo "      · 只有 /data/system/users/0/settings_global.xml 可靠"
+    echo "      · 模块已改为 **XML 优先写入**（v2.5 起），值一定能落盘"
+    echo "      · 但直接改 XML 不会触发变更通知 → **动画要下次开机才生效**"
+fi
+echo
+
 echo "=== 5. settings provider 进程与近期日志 ==="
 ps -A 2>/dev/null | grep -i setting | head -5
 echo "  --- logcat（settings / animation / Failed transaction，最近 25 条）---"

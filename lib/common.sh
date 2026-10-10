@@ -447,21 +447,35 @@ settings_get() {
     return 1
 }
 
-# settings_put_any <key> <value> → 三条写入路径都试一遍，任一成功即返回 0
+# settings_put_any <key> <value> → 写入并保证落盘，成功返回 0
 #
-#   这台 ROM 上 `settings put` 与 `cmd settings put` 未必都能用，
-#   所以不赌某一条：传统 → cmd → 直接改 XML，最后**用读回来的值验证**。
+# ⚠ 顺序在 2026-10-10 反转了，依据是两次真机取证：
+#     `settings get/put`  **全部失败**：Failed transaction (2147483646)
+#     `cmd settings get/put` **同样失败**
+#     `settings list global` 返回 **0 条**（整个设置库读不出来）
+#     —— 这台 ROM 的设置服务是坏的，两条命令路径都到不了它。
+#   而 `settings_global.xml` 一直是好的（root 直接读写文件，不经过服务）。
+#
+#   所以：**以 XML 为准、为第一优先**，命令路径降级为"顺便通知一下服务"
+#   （如果服务恰好活着，它能收到变更、立刻通知 SystemUI；
+#     如果服务是坏的，至少值已经落盘，下次开机一定生效）。
+#
+#   代价说明（必须诚实）：直接改 XML **不会**触发设置服务的变更通知，
+#   所以 SystemUI 的动画可能要到下次开机才按新值走。
+#   在本机这种情况下这是唯一可靠的路 —— 命令路径根本写不进去。
 settings_put_any() {
     _k="$1"; _v="$2"
-    # ① 传统命令
-    settings put global "$_k" "$_v" 2>/dev/null
-    [ "$(xml_get "$_k")" = "$_v" ] && return 0
-    # ② cmd 接口（另一条代码路径）
-    cmd settings put global "$_k" "$_v" 2>/dev/null
-    [ "$(xml_get "$_k")" = "$_v" ] && return 0
-    # ③ 直接改 XML（最粗暴但最可靠；缺点是设置服务不会收到变更通知）
+
+    # ① 先直接写 XML —— 这是唯一被证明一定有效的路径
     settings_xml_force "$_k" "$_v" 2>/dev/null
-    [ "$(xml_get "$_k")" = "$_v" ] && return 0
+    _ok_xml=0
+    [ "$(xml_get "$_k")" = "$_v" ] && _ok_xml=1
+
+    # ② 再试命令路径（成功则服务会发变更通知，SystemUI 可立即生效）
+    settings put global "$_k" "$_v" 2>/dev/null
+    cmd settings put global "$_k" "$_v" 2>/dev/null
+
+    [ "$_ok_xml" = "1" ] && return 0
     return 1
 }
 

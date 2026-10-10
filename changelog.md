@@ -1,5 +1,19 @@
 # 更新日志
 
+## v2.5
+
+- **写入顺序反转：XML 第一优先**（依据第二次真机取证）：
+  `settings get`、`cmd settings get`、`settings list global` **三条全废**
+  （`Failed transaction` / 列举返回 0 条）—— 这台 ROM 的设置服务处于异常状态，
+  两条命令路径都到不了它。而 `settings_global.xml` 一直可读可写（root 直接改文件）。
+  所以 `settings_put_any()` 改为：**① 先直接写 XML（唯一被证明一定有效）→
+  ② 再试命令路径**（服务若活着会发变更通知，SystemUI 可立即生效）。每步都用 XML 回读验证。
+- **诚实标注副作用**：直接改 XML **不会**触发设置服务的变更通知，
+  所以在服务异常时，动画值要到**下次开机**才生效。这一点写进了代码注释与诊断输出。
+- 顺带：模块不会再因为读值而往 logcat 里刷一堆 `Failure calling service settings`。
+- `diag-anim.sh` 补一段**服务存活判定**（`settings list global` 是否返回内容），
+  直接给出"服务活着/读不出来"的结论和对应处置。
+
 ## v2.4
 
 - **根因找到了**（用户 diag-anim 取证）：这台 ROM 上 **`settings` 命令是坏的** ——
