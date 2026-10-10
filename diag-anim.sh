@@ -49,33 +49,44 @@ echo "=== 2. XML 分布在哪些用户目录 ==="
 ls -l /data/system/users/*/settings_global.xml 2>/dev/null | tr -s ' '
 echo
 
-echo "=== 3. 两条写入路径分别试（写不同值，看谁生效）==="
-echo "  [A] settings put 写 window=0.70"
-settings put global window_animation_scale 0.70 2>&1 | head -2
-sleep 2
-printf '      写后 → ①读=%s  ③XML=%s\n' \
-    "$(settings get global window_animation_scale 2>&1 | head -1)" \
-    "$(xread window_animation_scale 2>/dev/null)"
-
-echo "  [B] cmd settings put 写 window=0.80"
-cmd settings put global window_animation_scale 0.80 2>&1 | head -2
-sleep 2
-printf '      写后 → ①读=%s  ②读=%s  ③XML=%s\n' \
-    "$(settings get global window_animation_scale 2>&1 | head -1)" \
-    "$(cmd settings get global window_animation_scale 2>&1 | head -1)" \
-    "$(xread window_animation_scale 2>/dev/null)"
+echo "=== 3. 关键测试：命令路径能否触发一次「值的变化」（动画靠这个激活）==="
+echo "  机制：手表要检测到【调整】这个动作才激活动画，不是单纯给值。"
+echo "        settings put → 设置服务 → CONFIGURATION_CHANGED → WindowManager 采用"
+echo
+_before=$(xread window_animation_scale 2>/dev/null)
+echo "  写前 XML: $_before"
+echo
+echo "  [A] settings put 写 1.0（制造一次变化）"
+settings put global window_animation_scale 1.0 2>&1 | head -1
+sleep 3
+_mid=$(xread window_animation_scale 2>/dev/null)
+echo "      写后 XML: $_mid"
+echo
+echo "  [B] settings put 写 0.75（制造第二次变化 → 目标值）"
+settings put global window_animation_scale 0.75 2>&1 | head -1
+sleep 3
+_after=$(xread window_animation_scale 2>/dev/null)
+echo "      写后 XML: $_after"
+echo
+if [ "$_mid" != "$_before" ] || [ "$_after" != "$_mid" ]; then
+    echo "  ✅ 值发生了实际变化 —— 命令路径经过设置服务，动画应当被激活"
+else
+    echo "  ❌ 值没有变化 —— 命令路径没能到达设置服务。"
+    echo "     此时模块会退到「直写 XML」保底：值能落盘，但**不会激活动画**，"
+    echo "     要下次开机系统读 XML 时才采用。"
+fi
 echo
 
-echo "=== 4. 恢复成目标值（两条路都写一遍）==="
-for kv in "window_animation_scale 0.75" "transition_animation_scale 0.75" "animator_duration_scale 0.5"; do
-    set -- $kv
-    settings put global "$1" "$2" 2>/dev/null
-    cmd settings put global "$1" "$2" 2>/dev/null
-done
-sleep 3
-echo "  最终落盘："
+echo "=== 4. 恢复三项目标值（走命令路径）==="
+settings put global window_animation_scale 0.75 2>/dev/null
+settings put global transition_animation_scale 0.75 2>/dev/null
+settings put global animator_duration_scale 0.5 2>/dev/null
+cmd settings put global window_animation_scale 0.75 2>/dev/null
+cmd settings put global transition_animation_scale 0.75 2>/dev/null
+cmd settings put global animator_duration_scale 0.5 2>/dev/null
+sleep 2
 for k in window_animation_scale transition_animation_scale animator_duration_scale; do
-    printf '    %-26s ③XML=%s\n' "$k" "$(xread $k 2>/dev/null)"
+    printf '    %-26s XML=%s\n' "$k" "$(xread $k 2>/dev/null)"
 done
 echo
 

@@ -447,39 +447,49 @@ settings_get() {
     return 1
 }
 
-# settings_put_any <key> <value> → 写入并保证落盘，成功返回 0
+# settings_put_any <key> <value> → 写入并返回 0/1
 #
-# ⚠ 顺序在 2026-10-10 反转了，依据是两次真机取证：
-#     `settings get/put`  **全部失败**：Failed transaction (2147483646)
-#     `cmd settings get/put` **同样失败**
-#     `settings list global` 返回 **0 条**（整个设置库读不出来）
-#     —— 这台 ROM 的设置服务是坏的，两条命令路径都到不了它。
-#   而 `settings_global.xml` 一直是好的（root 直接读写文件，不经过服务）。
+# ⚠⚠ 这台设备上"写入"的目的**不是把值放进去，而是让系统检测到一次变化**。
 #
-#   所以：**以 XML 为准、为第一优先**，命令路径降级为"顺便通知一下服务"
-#   （如果服务恰好活着，它能收到变更、立刻通知 SystemUI；
-#     如果服务是坏的，至少值已经落盘，下次开机一定生效）。
+#   用户 2026-10-10 指出的关键机制：
+#     **手表需要检测到"调整"这个动作才会激活动画效果，不是简单赋予一个值。**
 #
-#   代价说明（必须诚实）：直接改 XML **不会**触发设置服务的变更通知，
-#   所以 SystemUI 的动画可能要到下次开机才按新值走。
-#   在本机这种情况下这是唯一可靠的路 —— 命令路径根本写不进去。
+#   也就是说：
+#     · `settings put`  → 经过设置服务 → 触发 CONFIGURATION_CHANGED
+#                        → WindowManager 重新读取并采用新值 → **动画激活** ✅
+#     · 直接改 XML      → 绕过服务 → **没有任何事件发生** → 动画不会激活 ❌
+#                        （值虽然在文件里，但系统不知道，等于没改）
+#
+#   所以这里**必须以命令路径为主**：
+#     传统 `settings put` → `cmd settings put` → **才轮到** XML（仅作最后保底）
+#
+#   v2.5 一度把顺序反过来（XML 优先），那是错的 ——
+#   它把值写对了却没有任何事件，正好废掉了 1.2 能生效的根本原因。
+#   ⛔ 不要为了"保证落盘"再把 XML 提到前面。
 settings_put_any() {
     _k="$1"; _v="$2"
 
-    # ① 先直接写 XML —— 这是唯一被证明一定有效的路径
-    settings_xml_force "$_k" "$_v" 2>/dev/null
-    _ok_xml=0
-    [ "$(xml_get "$_k")" = "$_v" ] && _ok_xml=1
-
-    # ② 再试命令路径（成功则服务会发变更通知，SystemUI 可立即生效）
+    # ① 传统命令 —— 最常规、最可能触发变更通知的路径
     settings put global "$_k" "$_v" 2>/dev/null
-    cmd settings put global "$_k" "$_v" 2>/dev/null
+    [ "$(xml_get "$_k")" = "$_v" ] && return 0
 
-    [ "$_ok_xml" = "1" ] && return 0
+    # ② cmd 接口 —— 另一条代码路径，同样会经过设置服务
+    cmd settings put global "$_k" "$_v" 2>/dev/null
+    [ "$(xml_get "$_k")" = "$_v" ] && return 0
+
+    # ③ 最后保底：直接改 XML
+    #    只有在设置服务完全不可用时才会走到这里。**值能落盘，但不会激活动画**
+    #    （下次开机系统读 XML 时才采用）。记一条日志说明这个区别。
+    settings_xml_force "$_k" "$_v" 2>/dev/null
+    if [ "$(xml_get "$_k")" = "$_v" ]; then
+        fish_log "⚠ 设置服务不可用，$_k 只能直写 XML —— 值已落盘，但不会激活动画（需下次开机生效）"
+        return 0
+    fi
     return 1
 }
 
-# anim_put <key> <value> —— 动画专用写入：三条路都试 + 记日志
+# anim_put <key> <value> —— 动画专用写入
+#   必须走命令路径（触发变更通知），见 settings_put_any 上方的机制说明。
 anim_put() {
     if settings_put_any "$1" "$2"; then
         return 0
