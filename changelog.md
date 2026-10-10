@@ -1,5 +1,22 @@
 # 更新日志
 
+## v2.4
+
+- **根因找到了**（用户 diag-anim 取证）：这台 ROM 上 **`settings` 命令是坏的** ——
+  `settings get global xxx` 每次都报 `cmd: Failure calling service settings:
+  Failed transaction (2147483646)`；而 `/data/system/users/0/settings_global.xml` 里
+  0.75/0.75/0.5 **都在**。也就是说：**模块的写入一直是成功的，坏的是"读"**，
+  而且系统没按这个值执行。前面几轮调时机（6 秒/三步/守护/三轮/等待）全部方向错误。
+- **`settings_get` 优先级反转**：以前是 `settings get` → 失败才读 XML（每次白费一次
+  失败的 binder 调用）；现在 **XML → `cmd settings` → `settings`**，三条独立路径任一能通即用。
+- **新增 `settings_put_any()`**：写入三条路都试 —— 传统 `settings put` →
+  `cmd settings put`（另一条代码路径，模块从没用过）→ `settings_xml_force`（直接改 XML），
+  每步都用读回来的值验证。另有 `anim_put()` 包装，失败会记日志。
+- 动画段六个写入点全部改用 `anim_put`，**不再有裸 `settings put`**；
+  动画逻辑仍是 1.x 原样 8 行、只有一个 `sleep`、无 `if`、无条件覆盖。
+- `diag-anim.sh` 升级为 v2：**把两条写入路径分别试一遍**（写 0.70 再写 0.80），
+  对照 XML 判断哪条真的生效；并列出所有用户目录的 settings_global.xml。
+
 ## v2.3
 
 - **删掉我加的等待与沉降**（用户指出全是无用功）：移除 `wait_boot_full()`

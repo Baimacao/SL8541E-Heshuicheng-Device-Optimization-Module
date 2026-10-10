@@ -152,14 +152,14 @@ fish_log "WebUI 状态页已生成"
 #  绝不写"已经是目标值就跳过"：跳过就等于没执行。
 # ═══════════════════════════════════════════════════════════════════════════
 
-settings put global window_animation_scale 1.0
-settings put global transition_animation_scale 1.0
-settings put global animator_duration_scale 1.0
+anim_put window_animation_scale 1.0
+anim_put transition_animation_scale 1.0
+anim_put animator_duration_scale 1.0
 sleep 1
 
-settings put global window_animation_scale 0.75
-settings put global transition_animation_scale 0.75
-settings put global animator_duration_scale 0.5
+anim_put window_animation_scale 0.75
+anim_put transition_animation_scale 0.75
+anim_put animator_duration_scale 0.5
 
 W=$(settings_get window_animation_scale)
 T=$(settings_get transition_animation_scale)

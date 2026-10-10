@@ -418,16 +418,60 @@ xml_get() {
     return 1
 }
 
-# settings_get <key> → 先问 settings，失败再读 XML
-#   注意 settings 失败时会吐出 "cmd: Failure calling service ..." 这种话，
-#   直接当值用会把 UI 搞乱，所以要先过滤掉。
+# settings_get <key> → 值（读不到输出空串）
+#
+# ⚠ 优先级在 2026-10-10 反了过来，原因是有真机取证：
+#   这台 ROM 上 `settings get global xxx` **全部失败**：
+#       cmd: Failure calling service settings: Failed transaction (2147483646)
+#   而 /data/system/users/0/settings_global.xml 里的值是正确的。
+#   所以"先问 settings"这条路在这台机器上等于永远拿不到值，
+#   白白多一次失败的 binder 调用（还会往日志里刷 Failure）。
+#
+#   现在的顺序：XML → cmd settings → 传统 settings
+#   三条都是独立代码路径，任一条能通就用。
 settings_get() {
+    _v=$(xml_get "$1")
+    [ -n "$_v" ] && { echo "$_v"; return 0; }
+
+    _out=$(cmd settings get global "$1" 2>/dev/null)
+    case "$_out" in
+        *Failure*|*cmd:*|*Error*|*null|"") ;;
+        *) echo "$_out"; return 0 ;;
+    esac
+
     _out=$(settings get global "$1" 2>/dev/null)
     case "$_out" in
         *Failure*|*cmd:*|*Error*|*null|"") ;;
         *) echo "$_out"; return 0 ;;
     esac
-    xml_get "$1"
+    return 1
+}
+
+# settings_put_any <key> <value> → 三条写入路径都试一遍，任一成功即返回 0
+#
+#   这台 ROM 上 `settings put` 与 `cmd settings put` 未必都能用，
+#   所以不赌某一条：传统 → cmd → 直接改 XML，最后**用读回来的值验证**。
+settings_put_any() {
+    _k="$1"; _v="$2"
+    # ① 传统命令
+    settings put global "$_k" "$_v" 2>/dev/null
+    [ "$(xml_get "$_k")" = "$_v" ] && return 0
+    # ② cmd 接口（另一条代码路径）
+    cmd settings put global "$_k" "$_v" 2>/dev/null
+    [ "$(xml_get "$_k")" = "$_v" ] && return 0
+    # ③ 直接改 XML（最粗暴但最可靠；缺点是设置服务不会收到变更通知）
+    settings_xml_force "$_k" "$_v" 2>/dev/null
+    [ "$(xml_get "$_k")" = "$_v" ] && return 0
+    return 1
+}
+
+# anim_put <key> <value> —— 动画专用写入：三条路都试 + 记日志
+anim_put() {
+    if settings_put_any "$1" "$2"; then
+        return 0
+    fi
+    fish_log "⚠ 动画写入失败：$1=$2（三条路径都没成功）"
+    return 1
 }
 
 # settings_put <key> <value> [重试次数]

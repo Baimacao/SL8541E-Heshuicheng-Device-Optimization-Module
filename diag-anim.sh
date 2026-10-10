@@ -1,88 +1,91 @@
 #!/system/bin/sh
 # ═══════════════════════════════════════════════════════════════════════════
-#  diag-anim.sh —— 动画"写进去却不生效"的取证
+#  diag-anim.sh v2 —— 动画"写进去却不生效"的取证
 #  ---------------------------------------------------------------------------
-#  用法（手表上，建议开机 2 分钟后再跑）：
+#  用法（手表上）：
 #      su -c 'sh /data/adb/modules/SL8541E_Config_Fix/diag-anim.sh' > /sdcard/diag-anim.txt
 #
-#  要回答的问题：
-#    报告读回是 0.75，但系统设置界面显示 1.0x —— 到底哪个是真的？
-#
-#  三个读数来源必须分开看：
-#    ① settings get           → settings provider 的内存值（模块和报告读的就是它）
-#    ② settings_global.xml    → 落盘的持久值（系统设置界面读的是它）
-#    ③ dumpsys window         → WindowManager 实际用的值（决定动画快慢的真正的那个）
-#  如果 ①=0.75 而 ②或③=1.0，就说明"写进了内存但没落盘/没被采用"。
+#  v1 已经查明的事实（2026-10-10）：
+#    · `settings get global xxx` **全部失败**：Failed transaction (2147483646)
+#    · 但 /data/system/users/0/settings_global.xml 里 **0.75 / 0.75 / 0.5 都在** ← 写成功了
+#  所以本版重点回答：**四条读写路径里，哪几条能用？**
+#    ① settings get/put          （传统命令，已知 get 失败）
+#    ② cmd settings get/put      （另一条代码路径，模块里从没用过）
+#    ③ settings_global.xml       （落盘文件，已知可读）
+#    ④ settings list global      （列出全部，看键到底在不在）
 # ═══════════════════════════════════════════════════════════════════════════
 
 M="${MODDIR:-/data/adb/modules/SL8541E_Config_Fix}"
-XML="/data/system/users/0/settings_global.xml"
-[ -f "$XML" ] || XML="/data/system/settings_global.xml"
+XMLS="/data/system/users/0/settings_global.xml /data/system/users/10/settings_global.xml /data/system/settings_global.xml"
+
+xread() {  # xread <key> → 值@文件（从所有可能的 XML 里找）
+    for x in $XMLS; do
+        [ -f "$x" ] || continue
+        v=$(grep -o "name=\"$1\"[^/]*" "$x" 2>/dev/null | grep -o 'value="[^"]*"' | head -1 | sed 's/value="//;s/"$//')
+        [ -n "$v" ] && { echo "$v@$x"; return 0; }
+    done
+    return 1
+}
 
 echo "=== 0. 环境 ==="
 echo "时间:     $(date)"
 echo "boot_completed: $(getprop sys.boot_completed)"
 echo "开机时长: $(cut -d' ' -f1 /proc/uptime 2>/dev/null) 秒"
 echo "模块版本: $(grep '^version=' $M/module.prop 2>/dev/null | cut -d= -f2)"
+echo "当前 uid: $(id -u 2>/dev/null)"
 echo
 
-echo "=== 1. 三个来源逐个读（每项读 3 次，看稳不稳）==="
-for k in window_animation_scale transition_animation_scale animator_duration_scale; do
+echo "=== 1. 四条读取路径逐个试（本版重点）==="
+for k in window_animation_scale animator_duration_scale; do
     echo "--- $k ---"
-    printf '  ① settings get      : '
-    for i in 1 2 3; do printf '[%s] ' "$(settings get global $k 2>&1)"; done
-    echo
-    printf '  ② settings_global.xml: '
-    if [ -f "$XML" ]; then
-        _x=$(grep -o "name=\"$k\" value=\"[^\"]*\"" "$XML" 2>/dev/null | head -1 | sed 's/.*value="//;s/"//')
-        echo "[${_x:-未找到}]"
-    else
-        echo "[XML 不存在: $XML]"
-    fi
-    printf '  ③ dumpsys window     : '
-    dumpsys window 2>/dev/null | grep -i "m${k%%_*}" | head -2 | tr -s ' ' | tr '\n' ' '
-    echo
+    printf '  ① settings get      : %s\n' "$(settings get global $k 2>&1 | head -1)"
+    printf '  ② cmd settings get  : %s\n' "$(cmd settings get global $k 2>&1 | head -1)"
+    printf '  ③ XML 落盘值        : %s\n' "$(xread $k 2>/dev/null || echo 未找到)"
+    printf '  ④ settings list 命中: %s 条\n' "$(settings list global 2>/dev/null | grep -c "$k")"
 done
 echo
 
-echo "=== 2. settings_global.xml 的修改时间（判断有没有被重写）==="
-if [ -f "$XML" ]; then
-    ls -l "$XML" 2>/dev/null | tr -s ' '
-    echo "  当前时间: $(date '+%Y-%m-%d %H:%M:%S')"
-else
-    echo "  XML 不存在，找找看："
-    find /data/system -name 'settings*.xml' 2>/dev/null | head -10
-fi
+echo "=== 2. XML 分布在哪些用户目录 ==="
+ls -l /data/system/users/*/settings_global.xml 2>/dev/null | tr -s ' '
 echo
 
-echo "=== 3. 现在写一次，立刻连读 5 次（每次隔 2 秒），看会不会掉 ==="
-echo "  写入: window=0.75 transition=0.75 animator=0.5"
-settings put global window_animation_scale 0.75
-settings put global transition_animation_scale 0.75
-settings put global animator_duration_scale 0.5
-_n=1
-while [ "$_n" -le 5 ]; do
-    echo "  第 $_n 次（+$(( (_n-1) * 2 ))秒）: $(settings get global window_animation_scale) / $(settings get global animator_duration_scale)"
-    _n=$((_n + 1)); sleep 2
+echo "=== 3. 两条写入路径分别试（写不同值，看谁生效）==="
+echo "  [A] settings put 写 window=0.70"
+settings put global window_animation_scale 0.70 2>&1 | head -2
+sleep 2
+printf '      写后 → ①读=%s  ③XML=%s\n' \
+    "$(settings get global window_animation_scale 2>&1 | head -1)" \
+    "$(xread window_animation_scale 2>/dev/null)"
+
+echo "  [B] cmd settings put 写 window=0.80"
+cmd settings put global window_animation_scale 0.80 2>&1 | head -2
+sleep 2
+printf '      写后 → ①读=%s  ②读=%s  ③XML=%s\n' \
+    "$(settings get global window_animation_scale 2>&1 | head -1)" \
+    "$(cmd settings get global window_animation_scale 2>&1 | head -1)" \
+    "$(xread window_animation_scale 2>/dev/null)"
+echo
+
+echo "=== 4. 恢复成目标值（两条路都写一遍）==="
+for kv in "window_animation_scale 0.75" "transition_animation_scale 0.75" "animator_duration_scale 0.5"; do
+    set -- $kv
+    settings put global "$1" "$2" 2>/dev/null
+    cmd settings put global "$1" "$2" 2>/dev/null
+done
+sleep 3
+echo "  最终落盘："
+for k in window_animation_scale transition_animation_scale animator_duration_scale; do
+    printf '    %-26s ③XML=%s\n' "$k" "$(xread $k 2>/dev/null)"
 done
 echo
 
-echo "=== 4. 再等 30 秒看最终值 ==="
-sleep 30
-echo "  settings get : $(settings get global window_animation_scale) / $(settings get global animator_duration_scale)"
-if [ -f "$XML" ]; then
-    echo "  XML          : $(grep -o 'name="window_animation_scale" value="[^"]*"' "$XML" 2>/dev/null | head -1 | sed 's/.*value="//;s/"//')"
-fi
+echo "=== 5. settings provider 进程与近期日志 ==="
+ps -A 2>/dev/null | grep -i setting | head -5
+echo "  --- logcat（settings / animation / Failed transaction，最近 25 条）---"
+logcat -d -t 500 2>/dev/null | grep -iE 'settings|animation_scale|Failed transaction' | tail -25
 echo
 
-echo "=== 5. 开发者选项 / transition 相关系统属性 ==="
-for p in ro.config.low_ram persist.sys.animation ro.animation.scale debug.anim; do
-    v=$(getprop "$p" 2>/dev/null)
-    [ -n "$v" ] && echo "  $p = $v"
-done
-echo
-
-echo "=== 6. 有没有别的东西在改它（看 settings provider 的日志）==="
-logcat -d -t 200 2>/dev/null | grep -iE 'animation_scale|SettingsProvider' | tail -15
+echo "=== 6. 模块自己的动画日志 ==="
+grep '动画' $M/fix.log 2>/dev/null | tail -5
 echo
 echo "=== 取证结束 ==="
