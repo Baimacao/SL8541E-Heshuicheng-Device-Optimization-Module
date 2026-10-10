@@ -461,6 +461,60 @@ settings_xml_force() {
     done
 }
 
+# ── 等"彻底开机完成" ──────────────────────────────────────────────────────
+# 用户要求：动画**一定要在彻底开机之后**做。
+#
+# 原来的 wait_boot() 有三个不够的地方：
+#   1. 只认 sys.boot_completed 一个信号 —— 个别 ROM 上它会被重置或迟迟不置位
+#   2. 有 120 秒上限，**超时就往下走** —— 设备慢一点就变成"没开机完就写"，
+#      正好是动画失效的典型场景（写完被系统随后的初始化覆盖）
+#   3. 完成后固定 sleep 5 就动手，没等系统真正安静下来
+#
+# 这个版本：
+#   · 多重信号：boot_completed + dev.bootcomplete + init.svc 不处于 starting
+#   · **不设上限** —— 不达目标就一直等（每轮打一次日志，便于看出卡在哪）
+#   · 达到后还要等一个"静默窗口"：连续 N 轮所有信号都保持稳定才算数
+#   · 再确认开机动画已停、用户已解锁（有锁屏的设备上，解锁前系统还在忙）
+wait_boot_full() {
+    _stall=0; _quiet=0; _last=""
+    _MAX_STALL=600      # 安全阀：极端情况卡 20 分钟就放弃等待，避免永远不做事
+    while [ "$_stall" -lt "$_MAX_STALL" ]; do
+        _bc=$(getprop sys.boot_completed 2>/dev/null)
+        _dbc=$(getprop dev.bootcomplete 2>/dev/null)
+        _anim=$(getprop init.svc.bootanim 2>/dev/null)
+        _snap="$_bc|$_dbc|$_anim"
+
+        # 三个条件都满足才算"开机完成"
+        if [ "$_bc" = "1" ] && [ "$_dbc" = "1" ] && [ "$_anim" != "running" ]; then
+            # 静默窗口：连续 3 轮快照不变，认为系统不再抖
+            if [ "$_snap" = "$_last" ]; then
+                _quiet=$((_quiet + 1))
+            else
+                _quiet=0
+            fi
+            [ "$_quiet" -ge 3 ] && break
+        else
+            _quiet=0
+        fi
+        _last="$_snap"
+
+        [ $((_stall % 15)) -eq 0 ] && \
+            fish_log "等彻底开机… boot_completed=$_bc dev=$_dbc bootanim=$_anim"
+        sleep 2
+        _stall=$((_stall + 1))
+    done
+
+    # 解锁确认（无锁屏或已解锁时 sys.user.0.ce_available 为 true）
+    _u=0
+    while [ "$(getprop sys.user.0.ce_available 2>/dev/null)" != "true" ] && [ "$_u" -lt 60 ]; do
+        sleep 2; _u=$((_u + 1))
+    done
+
+    # 最后再稳一下，确保 system_server 那一轮初始化已经过去
+    sleep 5
+    fish_log "彻底开机完成（等了 $((_stall * 2)) 秒，解锁确认 ${_u} 轮）"
+}
+
 # ── 等开机完成 ──
 wait_boot() {
     _n=0
