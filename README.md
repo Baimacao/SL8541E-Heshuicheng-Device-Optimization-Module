@@ -1,9 +1,10 @@
 # SL8541E 和顺成方案设备优化模块
 
-> **本包：HSC特供（`hsc`）** —— 仅适用于展锐 SL8541E / SC9832E + 和顺成（HSC）方案手表。其他方案请用通用包。
+> **本包：HSC特供·有音效**（`hsc` + audio）
 >
-> 另一个包型是「通用包（不处理虚标/云控/指纹人脸）」，在同一个 Release 里另有一个 zip。
-> **两个包不能同时安装**（模块 ID 相同）。
+> 同一个 Release 里有四个包：**HSC 特供 / 通用** × **有音效 / 无音效**。
+> 另一个机型维度是「通用包（不处理虚标/云控/指纹人脸）」；另一个音效维度是「无音效」。
+> **四个包不能同时安装**（模块 ID 相同）。
 
 [English](README-EN.md) | 中文
 
@@ -40,33 +41,61 @@ persist.sys.cpu=10    # 四核标十核
 
 ---
 
-## v2.1 主要更新
+## 四个包，按需选一个
 
-### 动画：完全恢复成 1.x 原样
+同一个 Release 里有四个包，两个维度：
 
-按要求把动画实现改回 v1.1 ~ v1.6 一直用的那段，**一字不改**：
+| # | 包 | 文件名 | 适合 |
+|---|---|---|---|
+| ① | **HSC 特供 · 有音效** | `SL8541E_Config_Fix_v2.0_HSC_Audio.zip` | 和顺成方案手表 + 想要 V4A 音效 |
+| ② | **HSC 特供 · 无音效** | `SL8541E_Config_Fix_v2.0_HSC.zip` | 和顺成方案手表，不要音效 |
+| ③ | **通用 · 有音效** | `SL8541E_Config_Fix_v2.0_Universal_Audio.zip` | 其他 SL8541E 设备 + 想要 V4A 音效 |
+| ④ | **通用 · 无音效** | `SL8541E_Config_Fix_v2.0_Universal.zip` | 其他 SL8541E 设备，不要音效 |
+
+- **机型维度**：HSC 特供会处理虚标 / 云控 / 指纹人脸（那些属性名只有和顺成方案才有）；
+  通用包不做这些，只做与机型无关的优化。
+- **音效维度**：有音效包含 ViPER4Android v6.0.1（装后需在 V4A 高级设置里开启）；
+  无音效包完全不含 V4A —— 不带 APK、不带音效库、不改 `audio_effects.conf`、不加 SELinux 规则。
+
+> ⚠ **四个包模块 ID 相同，不能同时安装。**
+> 每个包有**独立的更新通道**（`update-hsc-audio.json` / `update-hsc.json` /
+> `update-uni-audio.json` / `update-uni.json`）—— 点更新只会升到同一个包，
+> **不会被换成别的包型**。
+
+## v2.0 主要更新
+
+### 音效：合并 ViPER4Android（可选）
+
+- 合并 **ViPER4Android v6.0.1**（FX for Magisk v23，作者 ShadySquirrel / 小白杨修改）：
+  APK + `libv4a_fx_ics.so` + `audio_effects.conf`，均与原件**字节级一致**。
+- SELinux 放行**自适应**：有 `magiskpolicy` 用它，否则用 `apd`（APatch），都没有则跳过并记日志。
+- 无音效包会把这三件套和对应的开机段落**整段移除**（构建时按标记切除，不留残渣）。
+
+### 动画：完全按 1.x 原样
 
 ```sh
-# 修复动画（两步法）
 settings put global window_animation_scale 1.0
 settings put global transition_animation_scale 1.0
 settings put global animator_duration_scale 1.0
 sleep 1
-
 settings put global window_animation_scale 0.75
 settings put global transition_animation_scale 0.75
 settings put global animator_duration_scale 0.5
 ```
 
-**只有一遍** —— 不循环、不守护、不重试、不写 XML。
-放在 `service.sh` 最后，由 `wait_boot()` 保证**在开机成功之后**执行。
+只有一遍，不循环、不守护进程、不重试、不写 XML、无额外等待或沉降。
 
-> 中间试过的几种改法（间隔拉到 6 秒、三次覆盖、后台守护进程）**全部撤销** ——
-> 1.x 这版是唯一被真机反复验证过能生效的写法。
+> **关键机制**：手表需要检测到「调整」这个动作才会激活动画，不是简单赋予一个值。
+> 所以写入必须走 `settings` 命令路径（触发 `CONFIGURATION_CHANGED`），
+> **不能直写 XML** —— 那样没有任何事件，动画不会激活。
 
-回归测试 `_tools/test-animation1x.sh` 钉死这个行为：总写入 **6 次**、
-目标值**只写 1 次**、值序列 = `1.0 1.0 1.0 -> 0.75 0.75 0.5`，
-并在**源码层**检查没有循环/守护函数残留。
+### 其他
+
+- **移除**了「开机清理空文件夹」功能（源码零残留）。
+- 充电：有界重试 + 先 `chmod` 再写 + 常驻复写。
+- Wear OS 库挂载状态用 `mount_proof` 取证（`/proc/mounts` + 大小 + 内容）。
+- 体检报告：动画值连采 3 次（能识别"有东西在改它"）；显示模块身份 / 包型 / 清单条数。
+- 随包附带 `diagnose.sh`（综合取证）与 `diag-anim.sh`（动画专项）。
 
 ## 功能清单
 

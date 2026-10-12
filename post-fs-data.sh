@@ -40,7 +40,8 @@ fish_log "ZRAM：已下发关停指令"
 #   「原值→现值」明细由 charge_boost 写进日志。
 charge_retry post-fs-data 5 4
 
-# ── 4. ViPER4Android 音效（v2.7 合并进来的）────────────────────────────────
+# ── V4A-BEGIN ── ViPER4Android 音效（合并进来的；无音效包会被整段移除）──
+# ── 4. ViPER4Android 音效 ────────────────────────────────────────────────
 #   V4A 需要两条 SELinux 放行规则，否则 audioserver / mediaserver 没法加载它的
 #   soundfx 库。下面这四条来自 V4A 原模块的 post-fs-data.sh，原样保留。
 #
@@ -84,6 +85,7 @@ if [ -n "$_v4a_pol" ]; then
 else
     fish_log "V4A：⚠ 没有 magiskpolicy / apd，跳过 SELinux 放行（V4A 可能不生效）"
 fi
+# ── V4A-END ──
 
 fish_log "══ post-fs-data 结束 ══"
 fish_log "🐟 虚标处理完了。红烧肉呢？"

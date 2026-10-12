@@ -1,7 +1,9 @@
-# 包型：hsc
+# 本包：HSC特供·有音效
 
-仅适用于展锐 SL8541E / SC9832E + 和顺成（HSC）方案手表。其他方案请用通用包。
+- 版本：2.0 (versionCode 29)
+- 机型维度：`lib/variant` = `hsc`
+- 音效：**含** ViPER4Android v6.0.1（装后在 V4A 高级设置里开启）
+- 更新通道：`update-hsc-audio.json`（本包只收本包型的更新，不会被换成别的包）
 
-- 版本：2.7 (versionCode 28)
-- 包型标记：`lib/variant` = `hsc`
-- 属性清单里 `variant` 列为 `hsc` 的项，本包**不会**写入
+> 同一个 Release 里有四个包：HSC特供/通用 × 有音效/无音效。
+> 模块 ID 相同，**四个包不能同时安装**。
