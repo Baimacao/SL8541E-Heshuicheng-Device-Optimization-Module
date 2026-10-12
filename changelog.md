@@ -1,5 +1,24 @@
 # 更新日志
 
+## v2.7
+
+- **合并 ViPER4Android**（用户提供 `Viper4Android.7z`，v6.0.1 / Magisk v23 版，
+  作者 ShadySquirrel，小白杨修改）。并入三个文件，均经哈希比对与原件**字节级一致**：
+  - `system/priv-app/ViPER4Android/ViPER4Android.apk`（3.78 MB）
+  - `system/lib/soundfx/libv4a_fx_ics.so`（789 KB）
+  - `system/etc/audio_effects.conf`（5.6 KB，按用户选择**原样使用**）
+  包体积 136 KB → **3.9 MB**。`system/` 下与原模块零文件冲突。
+- **SELinux 放行并进 post-fs-data**：V4A 原模块用 `magiskpolicy`（Magisk 专有），
+  本机是 APatch → 改为**自适应**：有 `magiskpolicy` 用它，否则用 `apd`，都没有则跳过并记日志
+  （不让开机脚本失败）。四条规则原样保留，日志记 `已下发 N/4 条`。
+- **落盘自检**：post-fs-data 会记录 V4A 三个文件在模块内是否存在，
+  装了却没挂上时日志一眼可见。
+- preflight 新增 **V4A 五项检查**：三文件在位、`audio_effects.conf` 声明了
+  `libv4a_fx_ics.so`、APK 头两字节是 `PK`（合法 zip）。
+- ⚠ **已如实标注风险**：V4A 那份 `audio_effects.conf` 引用的是通用/高通机型库路径
+  （`/vendor/lib/soundfx/*`），展锐 SL8541E 上若原本没有这套体系，可能导致没声音。
+  发布说明里给了"刷前备份两条命令"与"没声音就禁用模块重启"的恢复办法。
+
 ## v2.6
 
 - **修正 v2.5 的方向性错误**。用户指出的关键机制：

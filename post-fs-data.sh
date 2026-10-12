@@ -40,6 +40,50 @@ fish_log "ZRAM：已下发关停指令"
 #   「原值→现值」明细由 charge_boost 写进日志。
 charge_retry post-fs-data 5 4
 
+# ── 4. ViPER4Android 音效（v2.7 合并进来的）────────────────────────────────
+#   V4A 需要两条 SELinux 放行规则，否则 audioserver / mediaserver 没法加载它的
+#   soundfx 库。下面这四条来自 V4A 原模块的 post-fs-data.sh，原样保留。
+#
+#   ⚠ 工具差异：V4A 原模块用 `magiskpolicy`（Magisk 专有）。本机是 APatch，
+#     对应命令是 `apd`。两个都试一遍，谁在就用谁；**都不在也不报错** ——
+#     规则是"锦上添花"，加载失败最多是 V4A 不生效，不该让开机脚本失败。
+#
+#   🌟 另外这里顺便记下 V4A 落盘没有 —— 装了模块但文件没挂上时，
+#      日志里能直接看出来，不用去翻文件。
+_v4a_files="
+system/priv-app/ViPER4Android/ViPER4Android.apk
+system/lib/soundfx/libv4a_fx_ics.so
+system/etc/audio_effects.conf
+"
+_v4a_ok=0; _v4a_miss=""
+for _rel in $_v4a_files; do
+    if [ -f "$MODDIR/$_rel" ]; then
+        _v4a_ok=$((_v4a_ok + 1))
+    else
+        _v4a_miss="$_v4a_miss $_rel"
+    fi
+done
+fish_log "V4A：模块内实际存在 $_v4a_ok/3 个文件"
+[ -n "$_v4a_miss" ] && fish_log "V4A：⚠ 缺失$_v4a_miss"
+
+# 选一个可用的策略工具
+_v4a_pol=""
+if command -v magiskpolicy >/dev/null 2>&1; then
+    _v4a_pol="magiskpolicy --live"
+elif command -v apd >/dev/null 2>&1; then
+    _v4a_pol="apd --live"
+fi
+
+if [ -n "$_v4a_pol" ]; then
+    _v4a_n=0
+    $_v4a_pol "allow audioserver audioserver_tmpfs file { read write execute }" 2>/dev/null && _v4a_n=$((_v4a_n + 1))
+    $_v4a_pol "allow mediaserver mediaserver_tmpfs file { read write execute }" 2>/dev/null && _v4a_n=$((_v4a_n + 1))
+    $_v4a_pol "allow hal_audio_default hal_audio_default process { execmem }" 2>/dev/null && _v4a_n=$((_v4a_n + 1))
+    $_v4a_pol "allow hal_audio_default hal_audio_default_tmpfs file { execute }" 2>/dev/null && _v4a_n=$((_v4a_n + 1))
+    fish_log "V4A：SELinux 放行规则已下发 $_v4a_n/4 条（工具：${_v4a_pol%% *}）"
+else
+    fish_log "V4A：⚠ 没有 magiskpolicy / apd，跳过 SELinux 放行（V4A 可能不生效）"
+fi
 
 fish_log "══ post-fs-data 结束 ══"
 fish_log "🐟 虚标处理完了。红烧肉呢？"
