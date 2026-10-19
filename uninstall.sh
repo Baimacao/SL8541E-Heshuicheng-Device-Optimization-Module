@@ -99,6 +99,32 @@ for p in $(echo "$PERSIST_PROPS $EXTRA_PROPS" | tr ' ' '\n' | grep -v '^$' | sor
     remove_prop "$p"
 done
 
+# ── 还原开机时改过的设置项（开发者选项 / USB 调试）──
+#   模块在 service.sh 里打开这两个开关，并把**原值**记在 .orig-settings。
+#   不还原的话，卸载后 USB 调试会一直开着 —— 独立审计专门指出了这一条。
+#
+#   三种情况：
+#     原值为空（当时根本没这个键）→ 删掉它
+#     原值是 0/其它               → 写回原值
+#     原值本来就是 1              → 用户自己开的，保持不动
+ORIG_SETTINGS="$MODDIR/.orig-settings"
+if [ -f "$ORIG_SETTINGS" ]; then
+    while IFS='=' read -r _k _v; do
+        case "$_k" in ''|\#*) continue ;; esac
+        [ -n "$_k" ] || continue
+        if [ -z "$_v" ]; then
+            settings delete global "$_k" 2>/dev/null
+            echo "  ✅ 已删除设置 $_k（原本不存在）" >> "$LOG"
+        elif [ "$_v" = "1" ]; then
+            echo "  · 设置 $_k 原本就是 1，保持不动" >> "$LOG"
+        else
+            settings put global "$_k" "$_v" 2>/dev/null
+            echo "  ✅ 已还原设置 $_k=$_v" >> "$LOG"
+        fi
+    done < "$ORIG_SETTINGS"
+    rm -f "$ORIG_SETTINGS" 2>/dev/null
+fi
+
 # ── 收拾自己起的后台进程和状态文件 ──
 #   两个常驻进程都要收：DNS 守护 + 充电复写循环。
 #   充电那个如果不收，卸载后它会继续跑满 20 轮（约 10 分钟）才自己退出。

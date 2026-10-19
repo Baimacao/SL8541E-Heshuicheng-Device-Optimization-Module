@@ -119,6 +119,21 @@ fi
 # ── 6. 设置项：开发者选项 ──
 #   settings 在部分上下文连不上 system_server（报 Failed transaction），
 #   所以先 settings 重试，全失败再直接改 XML。
+#
+# ⚠ 先记账、再动手（独立审计指出）：
+#   模块会把「开发者选项」和「USB 调试」打开。如果不记原值，
+#   卸载后用户就被永久留在"USB 调试开着"的状态 —— 这是安全隐患。
+#   所以第一次开机时把**原值**存到 .orig-settings，uninstall.sh 据此还原。
+#   只在文件不存在时记录，之后每次开机都不会覆盖掉真正的原值。
+ORIG_SETTINGS="$MODDIR/.orig-settings"
+if [ ! -f "$ORIG_SETTINGS" ]; then
+    {
+        echo "adb_enabled=$(settings_get adb_enabled)"
+        echo "development_settings_enabled=$(settings_get development_settings_enabled)"
+    } > "$ORIG_SETTINGS" 2>/dev/null
+    fish_log "已记录设置项原值（卸载时会还原）"
+fi
+
 fish_log "开始写开发者选项"
 if settings_put development_settings_enabled 1; then
     fish_log "✅ 开发者选项写入成功"

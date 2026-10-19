@@ -16,6 +16,12 @@
 - **`diagnose.sh` 用了 awk 和 `\s`** —— Android 的 toybox **没有 awk**，
   `\s` 在 toybox grep 里也不生效。结果它永远输出"格式正常"，
   而用户会据此得出与事实相反的结论。已改成纯 shell 实现。
+- **卸载时还原设置项**（独立审计指出）：模块会把「开发者选项」和「USB 调试」打开，
+  但原来**卸载完全不还原** → 用户被永久留在"USB 调试开着"的状态，是安全隐患。
+  现在 `service.sh` 第一次开机时把**原值**记到 `.orig-settings`（仅首次记录，
+  之后不覆盖），`uninstall.sh` 据此分三种情况处理：原值为空 → `delete`；
+  原值是 0/其它 → 写回原值；原值本来就是 1（用户自己开的）→ 保持不动。
+  新增 `test-restore-settings.sh`（6 组断言），preflight 也加了对应检查。
 - **移除空壳 `wear-service.jar`**（审计附带取证）：318 字节，解包只有
   `META-INF/MANIFEST.MF`、**不含任何类**（另一个 `wearable.jar` 里是 `classes.dex`，
   是 Android 正确格式，保留）。它被 magic mount 到 `/system/framework/` 却没有任何内容，
