@@ -150,7 +150,6 @@ endc
 
 card "WEAR_OS · 环境"
 row "wearable.jar"   "$(badge "$(kv WEAR_JAR)")"
-row "wear-service"   "$(badge "$(kv WEAR_SVC)")"
 row "permissions"    "$(badge "$(kv WEAR_XML)")"
 endc
 

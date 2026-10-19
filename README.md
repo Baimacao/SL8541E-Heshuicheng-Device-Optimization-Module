@@ -204,7 +204,7 @@ su -c 'sh /data/adb/modules/SL8541E_Config_Fix/lib/install.sh install'
 
 ### 环境
 
-- Wear OS 库引入（`wearable.jar` + `wear-service.jar` + 权限 XML）
+- Wear OS 库引入（`wearable.jar` + 权限 XML）
 - GitHub Hosts 加速（含动态守护）
 
 ### 维护
@@ -272,7 +272,7 @@ SL8541E_Config_Fix/
 ├── system/
 │   ├── etc/hosts                   GitHub 加速
 │   ├── etc/permissions/com.google.android.wearable.xml
-│   └── framework/{com.google.android.wearable.jar, wear-service.jar}
+│   └── framework/com.google.android.wearable.jar
 ├── vendor/overlay/
 │   └── framework-res__auto_generated_rro.apk    （可选）power_profile 修正
 └── META-INF/com/google/android/    Magisk 兼容壳（APatch 走 customize.sh）

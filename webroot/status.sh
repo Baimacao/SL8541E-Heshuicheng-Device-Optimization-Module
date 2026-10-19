@@ -108,7 +108,6 @@ out "ANIM_DUR"   "$(settings_get animator_duration_scale)"
 #   会让状态页显示"就绪"而体检报告显示"未挂载"，两边打架。
 _wear=1
 for _wf in system/framework/com.google.android.wearable.jar \
-           system/framework/wear-service.jar \
            system/etc/permissions/com.google.android.wearable.xml; do
     case "$(mount_proof "$_wf")" in yes:*) ;; *) _wear=0 ;; esac
 done

@@ -16,6 +16,11 @@
 - **`diagnose.sh` 用了 awk 和 `\s`** —— Android 的 toybox **没有 awk**，
   `\s` 在 toybox grep 里也不生效。结果它永远输出"格式正常"，
   而用户会据此得出与事实相反的结论。已改成纯 shell 实现。
+- **移除空壳 `wear-service.jar`**（审计附带取证）：318 字节，解包只有
+  `META-INF/MANIFEST.MF`、**不含任何类**（另一个 `wearable.jar` 里是 `classes.dex`，
+  是 Android 正确格式，保留）。它被 magic mount 到 `/system/framework/` 却没有任何内容，
+  依赖方若引用它会 `NoClassDefFoundError`；没有依赖方则纯噪声。已连同
+  `action.sh` / `status.sh` / `customize.sh` / `gen_status.sh` / README 里的引用一并删除。
 - **WebUI 版本号硬编码 v2.7** —— 界面显示旧版本，导致"更新检查永远提示有新版"。
   已改为构建时按 `$VER` 自动同步（`index.html` / `script.js`）。
 

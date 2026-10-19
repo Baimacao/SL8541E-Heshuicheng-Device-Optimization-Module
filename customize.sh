@@ -68,7 +68,6 @@ check_file "webroot/gen_status.sh"  "状态页生成脚本"
 check_dir  "system/framework"                                        "框架目录"
 check_file "system/etc/permissions/com.google.android.wearable.xml"  "Wear 权限声明"
 check_file "system/framework/com.google.android.wearable.jar"        "Wear 核心库"
-check_file "system/framework/wear-service.jar"                       "Wear 服务库"
 
 # GitHub 加速
 check_file "system/etc/hosts" "GitHub 加速 hosts"

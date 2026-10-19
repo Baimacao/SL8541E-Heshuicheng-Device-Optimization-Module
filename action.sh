@@ -221,7 +221,6 @@ echo "──────────────────"
 echo "Wear OS 库："
 WEAR_OK=1
 for f in system/framework/com.google.android.wearable.jar \
-         system/framework/wear-service.jar \
          system/etc/permissions/com.google.android.wearable.xml; do
     _proof=$(mount_proof "$f")
     case "$_proof" in

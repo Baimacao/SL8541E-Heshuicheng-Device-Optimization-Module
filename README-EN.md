@@ -165,7 +165,7 @@ su -c 'sh /data/adb/modules/SL8541E_Config_Fix/lib/install.sh install'
 
 ### Environment
 
-- Wear OS libraries (`wearable.jar` + `wear-service.jar` + permission XML)
+- Wear OS libraries (`wearable.jar` + permission XML)
 - GitHub Hosts acceleration with a dynamic guardian
 
 ---
