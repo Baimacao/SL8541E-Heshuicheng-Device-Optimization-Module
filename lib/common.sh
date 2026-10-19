@@ -466,23 +466,39 @@ settings_get() {
 #   v2.5 一度把顺序反过来（XML 优先），那是错的 ——
 #   它把值写对了却没有任何事件，正好废掉了 1.2 能生效的根本原因。
 #   ⛔ 不要为了"保证落盘"再把 XML 提到前面。
+# _wait_settled <key> <期望值> [总等待秒=2]
+#   设置服务是**异步落盘**的：`settings put` 返回时 XML 往往还没写完。
+#   之前写完立刻读 XML 比对 → 前两条路径几乎必然判"失败" →
+#   每次都掉进直写 XML，还打一条"设置服务不可用"的假警报。
+#   这里改成轮询等待，给服务 2 秒（每次 0.2 秒，共 10 次）。
+_wait_settled() {
+    _wk="$1"; _wv="$2"; _wtries="${3:-10}"
+    _wi=0
+    while [ "$_wi" -lt "$_wtries" ]; do
+        [ "$(xml_get "$_wk")" = "$_wv" ] && return 0
+        sleep 0.2 2>/dev/null || sleep 1
+        _wi=$((_wi + 1))
+    done
+    return 1
+}
+
 settings_put_any() {
     _k="$1"; _v="$2"
 
     # ① 传统命令 —— 最常规、最可能触发变更通知的路径
     settings put global "$_k" "$_v" 2>/dev/null
-    [ "$(xml_get "$_k")" = "$_v" ] && return 0
+    _wait_settled "$_k" "$_v" && return 0
 
     # ② cmd 接口 —— 另一条代码路径，同样会经过设置服务
     cmd settings put global "$_k" "$_v" 2>/dev/null
-    [ "$(xml_get "$_k")" = "$_v" ] && return 0
+    _wait_settled "$_k" "$_v" && return 0
 
     # ③ 最后保底：直接改 XML
     #    只有在设置服务完全不可用时才会走到这里。**值能落盘，但不会激活动画**
-    #    （下次开机系统读 XML 时才采用）。记一条日志说明这个区别。
+    #    （下次开机系统读 XML 时才采用）。
     settings_xml_force "$_k" "$_v" 2>/dev/null
-    if [ "$(xml_get "$_k")" = "$_v" ]; then
-        fish_log "⚠ 设置服务不可用，$_k 只能直写 XML —— 值已落盘，但不会激活动画（需下次开机生效）"
+    if _wait_settled "$_k" "$_v" 2; then
+        fish_log "⚠ 两条命令路径都没落到盘，$_k 已直写 XML —— 不会激活动画（下次开机生效）"
         return 0
     fi
     return 1
@@ -517,16 +533,38 @@ settings_put() {
 # 直接改 XML（settings 完全失灵时的兜底路径）
 settings_xml_force() {
     _key="$1"; _val="$2"
-    _xml="$SETTINGS_XMLS"
-    for _f in $_xml; do
+    _did=0
+    for _f in $SETTINGS_XMLS; do
         [ -f "$_f" ] || continue
-        cp "$_f" "$_f.bak" 2>/dev/null
-        if grep -q "name=\"$_key\"" "$_f" 2>/dev/null; then
-            sed -i "s|name=\"$_key\" value=\"[^\"]*\"|name=\"$_key\" value=\"$_val\"|" "$_f" 2>/dev/null
+
+        # ⚠ 三条纪律（都是审计指出来的真风险）：
+        #   1. 不用 `sed -i` —— 它会换 inode 且不保留属主/权限；
+        #      而这个文件必须保持 system:system。改成"读→改→原地写回"。
+        #   2. 插入新节点时不能用 sed 的 `\n` —— 那是 GNU 扩展，
+        #      toybox sed 会把字面的 n 写进文件，**直接把 XML 写坏**。
+        #   3. 绝不创建 .bak（东西堆在 /data/system 里会被系统/管理器误读）。
+        _perm=$(ls -l "$_f" 2>/dev/null | cut -d' ' -f1)
+        _tmp="$_f.sl8541e.tmp"
+        cp "$_f" "$_tmp" 2>/dev/null || continue
+
+        if grep -q "name=\"$_key\"" "$_tmp" 2>/dev/null; then
+            sed "s|name=\"$_key\" value=\"[^\"]*\"|name=\"$_key\" value=\"$_val\"|" "$_tmp" > "$_tmp.2" 2>/dev/null
         else
-            sed -i "s|</settings>|<setting id=\"0\" name=\"$_key\" value=\"$_val\" package=\"android\" />\n</settings>|" "$_f" 2>/dev/null
+            # 只做"在 </settings> 前插一行"，用两次 sed 分开做，避开 \n
+            sed "s|</settings>|__SL8541E_INS__</settings>|" "$_tmp" > "$_tmp.2" 2>/dev/null
+            sed "s|__SL8541E_INS__|<setting id=\"0\" name=\"$_key\" value=\"$_val\" package=\"android\" />|" "$_tmp.2" > "$_tmp.3" 2>/dev/null
+            mv "$_tmp.3" "$_tmp.2" 2>/dev/null
         fi
+
+        if [ -s "$_tmp.2" ]; then
+            cat "$_tmp.2" > "$_f" 2>/dev/null     # 原地写回：inode 与属主不变
+            [ -n "$_perm" ] && chmod "${_perm#-}" "$_f" 2>/dev/null
+            _did=1
+        fi
+        rm -f "$_tmp" "$_tmp.2" "$_tmp.3" 2>/dev/null
     done
+    [ "$_did" = "1" ] && return 0
+    return 1
 }
 
 # ── 等开机完成 ──

@@ -93,9 +93,30 @@ echo "=== 7. 模块自身状态 ==="
 M=/data/adb/modules/SL8541E_Config_Fix
 echo "  包型   : $(cat $M/lib/variant 2>/dev/null)"
 echo "  版本   : $(grep '^version=' $M/module.prop 2>/dev/null | cut -d= -f2)"
-echo "  prop.list 行数: $(grep -vc '^\s*#\|^\s*$' $M/lib/prop.list 2>/dev/null)"
+# ⚠ 不能用 awk，也不能用 grep 的 \s：Android 的 toybox 两者都不支持
+#   （awk 根本不存在；\s 在 toybox grep 里不生效，会得到空结果并让人误判"格式正常"）
+_n=0
+while IFS='|' read -r _a _b _c _d _e _f; do
+    _n=$((_n + 1))
+    case "$_a" in ''|\#*) continue ;; esac
+    _cnt=1
+    for _x in "$_b" "$_c" "$_d" "$_e" "$_f"; do [ -n "$_x" ] && _cnt=$((_cnt + 1)); done
+done < "$M/lib/prop.list" 2>/dev/null
+echo "  prop.list 总行数（含注释/空行）: $_n"
 echo "  prop.list 里非 5 列的行:"
-awk -F'|' '!/^[[:space:]]*#/ && NF && NF!=5 {print "      L" NR " 列数=" NF "  " $0}' $M/lib/prop.list 2>/dev/null | head -15
+_ln=0; _bad=0
+while IFS= read -r _line; do
+    _ln=$((_ln + 1))
+    case "$_line" in ''|\#*) continue ;; esac
+    case "$_line" in *'|'*) ;; *) continue ;; esac
+    _c=$(printf '%s' "$_line" | tr -cd '|' | wc -c)
+    _c=$((_c + 1))
+    if [ "$_c" -ne 5 ]; then
+        echo "      L$_ln 列数=$_c  $(printf '%s' "$_line" | cut -c1-60)"
+        _bad=$((_bad + 1))
+    fi
+done < "$M/lib/prop.list" 2>/dev/null
+[ "$_bad" -eq 0 ] && echo "      （无：全部 5 列 ✅）"
 echo "  （上面若为空 = 清单格式正常；若非空 = 这些行会被跳过）"
 echo
 
