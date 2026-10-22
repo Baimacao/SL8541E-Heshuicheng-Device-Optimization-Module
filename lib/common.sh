@@ -537,15 +537,19 @@ settings_xml_force() {
     for _f in $SETTINGS_XMLS; do
         [ -f "$_f" ] || continue
 
-        # ⚠ 三条纪律（都是审计指出来的真风险）：
+        # ⚠ 三条纪律（审计指出 + 技能清单强化）：
         #   1. 不用 `sed -i` —— 它会换 inode 且不保留属主/权限；
         #      而这个文件必须保持 system:system。改成"读→改→原地写回"。
         #   2. 插入新节点时不能用 sed 的 `\n` —— 那是 GNU 扩展，
         #      toybox sed 会把字面的 n 写进文件，**直接把 XML 写坏**。
         #   3. 绝不创建 .bak（东西堆在 /data/system 里会被系统/管理器误读）。
+        #
+        #   临时文件写在同目录（跨文件系统 rename 不原子），并用 trap 兜底清理：
+        #   万一中途被杀，下次运行也不会留下 .tmp 垃圾。
         _perm=$(ls -l "$_f" 2>/dev/null | cut -d' ' -f1)
         _tmp="$_f.sl8541e.tmp"
         cp "$_f" "$_tmp" 2>/dev/null || continue
+        trap 'rm -f "$_tmp" "$_tmp.2" "$_tmp.3" 2>/dev/null' 0
 
         if grep -q "name=\"$_key\"" "$_tmp" 2>/dev/null; then
             sed "s|name=\"$_key\" value=\"[^\"]*\"|name=\"$_key\" value=\"$_val\"|" "$_tmp" > "$_tmp.2" 2>/dev/null
@@ -556,12 +560,14 @@ settings_xml_force() {
             mv "$_tmp.3" "$_tmp.2" 2>/dev/null
         fi
 
+        # 写回前先确认结果文件非空 —— 空文件写回去等于清空系统设置
         if [ -s "$_tmp.2" ]; then
             cat "$_tmp.2" > "$_f" 2>/dev/null     # 原地写回：inode 与属主不变
             [ -n "$_perm" ] && chmod "${_perm#-}" "$_f" 2>/dev/null
             _did=1
         fi
         rm -f "$_tmp" "$_tmp.2" "$_tmp.3" 2>/dev/null
+        trap - 0
     done
     [ "$_did" = "1" ] && return 0
     return 1

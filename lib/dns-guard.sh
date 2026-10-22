@@ -29,6 +29,17 @@ IP_POOL="20.205.243.166 20.205.243.168 20.27.177.113 20.200.245.247 140.82.112.4
 CHECK_INTERVAL=1800              # 30 分钟一次
 PING_TIMEOUT=2
 
+# 防御：这两个值会直接进 `sleep`，非数字/空/0 会让守护空转（CPU 100%）
+# 或干脆报错退出。技能清单里"validate all inputs"就指这类。
+case "$CHECK_INTERVAL" in
+    ''|*[!0-9]*) CHECK_INTERVAL=1800 ;;
+esac
+[ "$CHECK_INTERVAL" -ge 60 ] 2>/dev/null || CHECK_INTERVAL=1800
+case "$PING_TIMEOUT" in
+    ''|*[!0-9]*) PING_TIMEOUT=2 ;;
+esac
+[ "$PING_TIMEOUT" -ge 1 ] 2>/dev/null || PING_TIMEOUT=2
+
 log() { echo "[$(date '+%m-%d %H:%M:%S')] [dns] $*" >> "$LOG" 2>/dev/null; }
 
 echo $$ > "$PIDFILE" 2>/dev/null
@@ -91,7 +102,7 @@ while true; do
         _state="offline"
         [ "$_last_state" != "$_state" ] && log "网络本身不通，暂停 hosts 维护（等网络恢复）"
         _last_state="$_state"
-        sleep $CHECK_INTERVAL
+        sleep "$CHECK_INTERVAL"
         continue
     fi
 
@@ -124,5 +135,5 @@ while true; do
             ;;
     esac
     _last_state="$_state"
-    sleep $CHECK_INTERVAL
+    sleep "$CHECK_INTERVAL"
 done

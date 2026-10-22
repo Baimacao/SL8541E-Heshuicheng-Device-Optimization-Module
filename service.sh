@@ -36,7 +36,7 @@ if [ -f "$LOCK" ]; then
 fi
 : > "$LOCK" 2>/dev/null
 printf '%s\n' "$_BOOT_ID" >> "$LOCK" 2>/dev/null
-trap 'rm -f "$LOCK" 2>/dev/null' EXIT
+trap 'rm -f "$LOCK" 2>/dev/null' 0
 
 fish_log "── service.sh 开始 ──"
 

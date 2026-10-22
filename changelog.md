@@ -1,5 +1,34 @@
 # 更新日志
 
+## v2.1.2
+
+用 **bash-defensive-patterns** 技能（skills.sh，41.5K stars，三项安全审计全过）
+的方法论再审一轮。该技能的建议多为 bash 专用，**不能照搬到 mksh**，
+所以先做了 bash→mksh 映射，只采纳可用的部分：
+
+| 技能建议 | 是否采纳 | 原因 |
+|---|---|---|
+| `set -Eeuo pipefail` | ❌ | mksh 无 `-E`/`pipefail`；且模块**故意不用 `-e`** —— 一个 sysfs 节点不存在不该让开机流程死掉 |
+| `[[ ]]` / `local -r` / `BASH_SOURCE` | ❌ | mksh 均不支持 |
+| 校验输入 | ✅ | 见下 |
+| `trap` 清理临时文件 | ✅ | 见下 |
+| `command -v` 替代 `which` | ✅ | 已符合（0 处 `which`） |
+| `printf` 优于 `echo` | ✅ | 已大量使用 |
+
+实际修复：
+- **`dns-guard.sh` 的间隔常量加防御**：`CHECK_INTERVAL` / `PING_TIMEOUT` 直接进 `sleep`，
+  非数字或为 0 会让守护空转（CPU 100%）或直接报错退出。现在非法值回落默认值。
+  `sleep` 参数也加了引号。
+- **`settings_xml_force` 的临时文件用 `trap` 兜底清理**：写在 `/data/system/` 同目录
+  （跨文件系统 rename 不原子），万一中途被杀会留 `.tmp` 垃圾。另外加了
+  **"结果文件非空才写回"** 的保护 —— 空文件写回去等于清空系统设置。
+- **`trap ... EXIT` 统一为 POSIX 的 `trap ... 0`**：mksh/ash 都认，不依赖 bash 别名。
+
+复核过但**未改动**的（确认本来就正确）：
+- `for x in $LIST` 的裸分词是**有意为之**（列表本身就是空格分隔的多路径），加引号反而会坏
+- `apply_ip()` 是幂等的（每次先 `sed -i '/github\.com/d'` 清旧条目再写）
+- 追加写全部落在日志或"仅首次记录"的文件上，重跑安全
+
 ## v2.1.1
 
 **修 2.1 里的四个真问题**（由独立审计代理发现，我核实后确认）：
