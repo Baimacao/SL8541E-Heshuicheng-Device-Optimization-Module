@@ -21,7 +21,7 @@ MODDIR="${MODDIR:-${0%/*}}"
 # 起因：体检报告显示充电还是原厂值，但离线模拟里写入是成功的 ——
 # 到底是脚本没跑、写失败、还是写了被系统改回去，全靠这行 + charge_boost 的明细来分。
 fish_log "══ post-fs-data 开始（包型 $VARIANT，模块 v$(module_version)，boot=$(getprop ro.boottime.init 2>/dev/null || echo '?')) ══"
-fish_log "咕噜。大肥鱼上岸，先把这锅虚标端走。"
+fish_log "🐟 大肥鱼：先剥虚标。"
 
 # ── 1. 属性清单（core 段一次写全，省得后期再补）──
 prop_apply core
@@ -88,5 +88,5 @@ fi
 # ── V4A-END ──
 
 fish_log "══ post-fs-data 结束 ══"
-fish_log "🐟 虚标处理完了。红烧肉呢？"
+fish_log "🐟 虚标段处理完毕。"
 exit 0

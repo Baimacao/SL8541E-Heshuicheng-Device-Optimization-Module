@@ -130,8 +130,7 @@ esac
 
 # ── 出报告 ──
 echo "【SL8541E 优化模块 · 体检报告】"
-echo "🐟 大肥鱼上线。别慌，我先看看这表还剩几口气。"
-echo "   (˘ω˘) 女仆装已穿好，开始扫描"
+echo "🐟 大肥鱼。逐项对一遍，标 ✗ 的就是没生效。"
 echo "──────────────────"
 echo "模块身份（先确认刷的是哪个包）："
 echo "  版本：      v$(module_version) (code $(module_version_code))"
@@ -245,7 +244,6 @@ echo "  温度：  ${TEMP_C} °C$TEMP_WARN"
 echo "  健康：  $(batt_health_show "$(batt_read health)")  [原始: $(batt_read health)]"
 echo "  状态：  $(batt_status_show "$(batt_read status)")  [原始: $(batt_read status)]"
 echo "──────────────────"
-echo "🐟 扫描完毕。这表的水平就这样了，能榨的都榨了。"
-echo "   状态页已刷新，切过去看更省事。"
+echo "🐟 报告完毕。状态页已刷新，切过去看更省事。"
 echo "   仅和顺成方案可用。"
 exit 0

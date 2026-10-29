@@ -113,8 +113,6 @@ else
 fi
 
 say ""
-say "        🐟  大 肥 鱼  上 岸  🐟"
-say ""
 say "  ┌──── 模块 ──────────────────────┐"
 say "  │ zero-sl8541e和顺成方案设备优化"
 say "  │ 版本 v$MOD_VER"
@@ -132,8 +130,7 @@ say "  │ 构建   : $(getprop ro.build.date)"
 say "  │ SELinux: $(getenforce 2>/dev/null)"
 say "  └────────────────────────────────┘"
 say ""
-say "  🐟 正在搬运优化方案……"
-say "     别断电。断了鱼会躺平，你还得重刷。"
+say "  正在落文件。别断电 —— 断了得重刷。"
 say ""
 
 # ── 权限落位 ───────────────────────────────────────────────────────────────
@@ -151,43 +148,37 @@ if [ -d "$MODPATH/lib" ]; then
     set_perm_recursive "$MODPATH/lib" 0 0 0755 0644
     # 库是被 source 的，不需要可执行位；dns-guard.sh 要 sh 执行，给上也无害
     [ -f "$MODPATH/lib/dns-guard.sh" ] && set_perm "$MODPATH/lib/dns-guard.sh" 0 0 0755
-    say "  🐟 公共库就位（属性清单 + 电池读取 + DNS 守护）"
+    say "  + lib/       公共库（属性清单 / 电池读取 / DNS 守护）"
 fi
 
 if [ -d "$MODPATH/webroot" ]; then
     set_perm_recursive "$MODPATH/webroot" 0 0 0755 0644
     [ -f "$MODPATH/webroot/status.sh" ] && set_perm "$MODPATH/webroot/status.sh" 0 0 0755
     [ -f "$MODPATH/webroot/gen_status.sh" ] && set_perm "$MODPATH/webroot/gen_status.sh" 0 0 0755
-    say "  🐟 顺手装了 WebUI（圆屏适配好了）"
+    say "  + webroot/   WebUI（圆屏适配）"
 fi
 
 if [ -d "$MODPATH/system" ]; then
     set_perm_recursive "$MODPATH/system" 0 0 0755 0644
-    say "  🐟 顺手捎上了 Wear OS 库"
+    say "  + system/    Wear OS 库"
 fi
 
 if [ -d "$MODPATH/vendor" ]; then
     set_perm_recursive "$MODPATH/vendor" 0 0 0755 0644
-    say "  🐟 顺手塞了个 RRO（power_profile 修正）"
+    say "  + vendor/    RRO（power_profile 修正）"
 fi
 
 if [ -f "$MODPATH/system/etc/hosts" ] && grep -q "github.com" "$MODPATH/system/etc/hosts" 2>/dev/null; then
-    say "  🐟 顺手铺了条 GitHub 高速路"
+    say "  + hosts      GitHub 加速条目"
 fi
 
 say "  ────────────────────────────────"
-say "  ✅ 装好了。重启之后鱼才正式上班。"
+say "  ✅ 装好了。所有动作都挂在开机钩子上，必须重启。"
 say ""
 say "  重启后可以："
 say "    · 点模块「WebUI」看状态页 / 排查 FAQ"
 say "    · 点模块「操作」看纯文本体检报告"
 say "  ────────────────────────────────"
 say ""
-say "  咕噜咕噜…… 大肥鱼下潜。"
-say ""
-say "   ╭──────────────────────────────────╮"
-say "   │  (˘ω˘)  本鱼上线                  │"
-say "   │  穷是穷了点，活还是要干好的。      │"
-say "   │  胆子可以肥嘟嘟，代码不能。        │"
-say "   ╰──────────────────────────────────╯"
+say "  🐟 大肥鱼。装完了，我回去躺着。"
 say ""

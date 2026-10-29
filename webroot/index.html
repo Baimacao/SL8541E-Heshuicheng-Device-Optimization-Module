@@ -1,4 +1,5 @@
-<!-- ⚠ 版本号是硬编码的：每次发版请同步替换本文件与 script.js 里的 vX.Y -->
+<!-- ⚠ 版本号写成占位符，构建脚本 _tools/build-*.ps1 会替换成实际版本。
+     别在这里写死具体版本号，否则每次发版都要手动同步，迟早漏。 -->
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -15,14 +16,14 @@
         &gt;&lt;(((('&gt;
        &gt;&lt;(((('&gt;     SL8541E
       &gt;&lt;(((('&gt;      config_fix
-       &gt;&lt;(((('&gt;     v2.1.2
+       &gt;&lt;(((('&gt;     v2.1.3
         &gt;&lt;(((('&gt;
     </pre>
     <div class="meta">
       <span class="prompt">~$</span>
       <span id="version">loading...</span>
     </div>
-    <div class="tagline">胆 子 可 以 肥 嘟 嘟 ， 代 码 不 能</div>
+    <div class="tagline">S L 8 5 4 1 E &nbsp;·&nbsp; 和 顺 成 方 案</div>
   </header>
 
   <nav class="tabs">
@@ -34,7 +35,7 @@
   <section id="tab-status" class="tab-panel active">
     <div class="hint">
       <span class="dim">#</span> 这是开机快照，不是直播。点模块卡片「操作」刷新后再回来看。<br>
-      <span class="dim">#</span> 点「操作」= 检查 GitHub 更新。要<b>安装</b>新版：用根管理器卡片上的<b>「更新」按钮</b>（读 update-hsc.json）。
+      <span class="dim">#</span> 点「操作」= 检查 GitHub 更新。要<b>安装</b>新版：用根管理器卡片上的<b>「更新」按钮</b>（读本包对应的 update-*.json）。
     </div>
     <iframe id="status-frame" src="status_generated.html" frameborder="0"></iframe>
   </section>
@@ -45,8 +46,9 @@
       <summary><span class="brk">[?]</span> 怎么更新模块（有新版了）</summary>
       <div class="faq-body">
         <p><b>首选：用根管理器卡片上的「更新」按钮。</b></p>
-        <p><span class="dim">&gt;</span> 根管理器会自己读仓库里的 <code>update.json</code>，
-           比对版本后在模块卡片上亮出更新按钮 —— 点它就行，管理器自己下载、自己安装</p>
+        <p><span class="dim">&gt;</span> 根管理器会读 <code>module.prop</code> 里 <code>updateJson</code>
+           指向的那份清单（本包专属，四个包各一份），比对版本后在卡片上亮出更新按钮 ——
+           点它就行，管理器自己下载、自己安装</p>
         <p><span class="dim">&gt;</span> 没看到按钮？下拉刷新模块列表，或重启一次管理器</p>
         <p><span class="dim">&gt;</span> 装完要<b>重启</b>才生效</p>
         <p><span class="dim">&gt;</span> <b>备选：命令行</b>（管理器不带更新按钮时用）</p>
@@ -73,7 +75,7 @@
     <details class="faq">
       <summary><span class="brk">[?]</span> 刷进去了，但没反应 / 找不到模块</summary>
       <div class="faq-body">
-        <p><span class="dim">&gt;</span> 先确认根管理器是 <b>APatch</b> / <b>Magisk v2.1.2+</b> / <b>KernelSU</b></p>
+        <p><span class="dim">&gt;</span> 先确认根管理器是 <b>APatch</b> / <b>Magisk v20.4+</b> / <b>KernelSU</b></p>
         <p><span class="dim">&gt;</span> <b>不重启 = 没装。</b> 模块的所有动作都挂在开机的两个钩子上</p>
         <p><span class="dim">&gt;</span> 管理器 → 模块 → 确认本模块在列表里且已启用</p>
         <p><span class="dim">&gt;</span> 安装时如果提示"这箱子是漏的"，说明压缩包不完整 → 重下</p>
@@ -84,7 +86,7 @@
       <summary><span class="brk">[?]</span> 状态页显示一堆「未生效」</summary>
       <div class="faq-body">
         <p><span class="dim">&gt;</span> 先重启一次。很多值只在开机那一刻写得进去，晚了就锁了</p>
-        <p><span class="dim">&gt;</span> 重启还这样，看日志（日志不骗人，鱼会骗你）：</p>
+        <p><span class="dim">&gt;</span> 重启还这样，看日志（日志不会骗你）：</p>
         <p><code>cat /data/adb/modules/SL8541E_Config_Fix/fix.log</code></p>
         <p><span class="dim">&gt;</span> 查冲突模块：<b>Hc_memory</b>（swappiness）、<b>tcpboost</b>（TCP 参数）、
            <b>dex2oat_4t</b>（CPU set 写成 4,5,6,7 那个）—— 本模块已接管它们干的活，同时开就是互相打架</p>
@@ -167,7 +169,7 @@
     </details>
 
     <details class="faq">
-      <summary><span class="brk">[?]</span> 能刷到别的表上吗（胆子肥嘟嘟的想法）</summary>
+      <summary><span class="brk">[?]</span> 能刷到别的表上吗</summary>
       <div class="faq-body">
         <p><b>只适用 SL8541E / SC9832E + 和顺成方案。</b></p>
         <p><span class="dim">&gt;</span> 别的方案刷进去，属性名对不上，表现是"装了个寂寞"</p>
@@ -193,7 +195,7 @@
     <div class="card about-card">
       <h2><span class="dim">&gt;</span> MODULE_INFO</h2>
       <div class="item"><span class="label">name</span><span class="value">zero-sl8541e和顺成方案设备优化</span></div>
-      <div class="item"><span class="label">version</span><span class="value">v2.1.2</span></div>
+      <div class="item"><span class="label">version</span><span class="value">v2.1.3</span></div>
       <div class="item"><span class="label">id</span><span class="value">SL8541E_Config_Fix</span></div>
       <div class="item"><span class="label">device</span><span class="value">SL8541E / SC9832E + HSC</span></div>
       <div class="item"><span class="label">root</span><span class="value">APatch / Magisk / KernelSU</span></div>
@@ -203,7 +205,7 @@
     <div class="card about-card">
       <h2><span class="dim">&gt;</span> CREDITS</h2>
       <div class="item"><span class="label">project_init</span><span class="value"><a href="https://space.bilibili.com/1329200878" target="_blank">B站白马曹</a></span></div>
-      <div class="item"><span class="label">code_design</span><span class="value">DeepSeek（大肥鱼）</span></div>
+      <div class="item"><span class="label">code_design</span><span class="value">DeepSeek</span></div>
       <div class="item"><span class="label">hardware_test</span><span class="value">白马曹的手</span></div>
     </div>
 
@@ -262,15 +264,15 @@
     &gt;&lt;(((('&gt;
      &gt;&lt;(((('&gt;
       &gt;&lt;(((('&gt;</pre>
-      <p>这表的天花板摸清楚了，能榨的都榨了。</p>
-      <p>剩下的交给时间，和下一次官方调价。</p>
+      <p>该榨的榨完了，剩下的不是代码能解决的。</p>
+      <p>有问题带日志来，别带玄学。</p>
       <p class="muted">仅和顺成方案可用</p>
     </div>
 
   </section>
 
   <footer>
-    <span class="dim">──</span> SL8541E_Config_Fix v2.1.2 <span class="dim">──</span>
+    <span class="dim">──</span> SL8541E_Config_Fix v2.1.3 <span class="dim">──</span>
   </footer>
 
 </div>

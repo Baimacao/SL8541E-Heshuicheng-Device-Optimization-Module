@@ -53,10 +53,9 @@
             })(btns[i]);
         }
 
-        // 版本号写死在页面里，省一次请求（模块版本在 module.prop 里改了，
-        // 这里也要跟着改，或者干脆点「操作」按钮看报告里的真实版本）
+        // 版本号用 v2.1.3 占位，构建脚本替换成实际版本（别再写死，写死就容易忘改）
         var ver = document.getElementById('version');
-        if (ver) { ver.textContent = 'v2.1.2'; }
+        if (ver) { ver.textContent = 'v2.1.3'; }
     }
 
     if (document.readyState === 'loading') {

@@ -48,7 +48,7 @@ fish_log "── service.sh 开始 ──"
 #   · 属性类操作倒是越早越好，但那些在 post-fs-data 里已经做过了
 #   v1.2 原本就有这个循环，v1.3 重构时被我漏掉了 —— 别再删。
 wait_boot
-fish_log "开机完成，大肥鱼二次巡检"
+fish_log "🐟 开机完成，第二遍巡检"
 
 # ── 1. 属性清单：core 二次保险 + service 段一次补齐 ──
 prop_apply core service
@@ -182,5 +182,5 @@ A=$(settings_get animator_duration_scale)
 fish_log "动画值: 窗口=$W 过渡=$T 时长=$A"
 
 fish_log "── service.sh 结束 ──"
-fish_log "🐟 巡检完毕。摸鱼去了，红烧肉记得叫我。"
+fish_log "🐟 巡检完毕，收工。"
 exit 0

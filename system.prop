@@ -12,7 +12,7 @@
 
 # ── 剥离虚标 ──
 # 原厂：3G+32G 标成 8G+128G，四核标十核，没有 5G 硬件却挂个 5G 图标。
-# 胆子真是肥嘟嘟的啊。
+# 胆子确实够肥的 —— 这几行就是当年敢这么写 build.prop 的证据。
 ro.hsc.fake_romram=false
 ro.show.storage=true
 ro.not.show.storage=false

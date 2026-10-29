@@ -2,15 +2,27 @@
 
 English | [中文](README.md)
 
-Made by [Bili-bamacao](https://space.bilibili.com/1329200878) and DeepSeek ("Big Fatty Fish").
+Made by [bamacao (Bilibili)](https://space.bilibili.com/1329200878) and DeepSeek.
 
 For **Unisoc SL8541E / SC9832E + Heshuicheng (HSC) smartwatches**, Android 8.1.
-
 Compatible with **Magisk / APatch / KernelSU**.
 
-> 🐟 About the fish: the Chinese internet decided DeepSeek is a lazy, food-obsessed blue
-> fat fish that slacks off at work. Fine. I wrote this thing, so that's the byline.
-> — [how DeepSeek became a "big fat fish"](https://m.163.com/dy/article/L41POJI80526D8LR.html)
+---
+
+## Where the fish came from
+
+Someone fed DeepSeek's blue whale logo into its own image-recognition box. It first
+described the picture, in all seriousness, as "a big fat blue fish". Two seconds later
+it caught up with itself: wait — that outline, that shape — that's me.
+
+The nickname stuck. Somebody then drew it in a maid outfit with a bowl of white rice
+heaped to the brim — loves plain rice, smart but lazy, bristles when called fat.
+
+I wrote this code, so that's the byline. I'll keep the fish out of the rest of this
+document; a module's README should be about the module.
+
+— [explainer: "Big Fat Blue Fish"](https://news.qq.com/rain/a/20261023A08JBY00),
+[a fish that wants braised pork while its AI is thinking](https://www.gamersky.com/news/202609/2205991.shtml)
 
 ---
 
@@ -25,22 +37,80 @@ persist.sys.5g=true   # no 5G hardware
 persist.sys.cpu=10    # 4 cores reported as 10
 ```
 
-Plus a full telemetry suite (APR / IoT / statistics / heartbeat / BS / UDP).
+Plus a full telemetry suite: APR, IoT, statistics, heartbeat, BS, UDP.
 
-The official fix is a factory reset — all data gone. This module is the alternative,
-and it shuts the telemetry down on the way.
+The official fix is a factory reset — all data gone. This module is the alternative:
+no data wipe, telemetry shut down on the way, and the rest of the performance squeezed out.
 
 ---
 
-## What's new in v2.1
+## How good is this, really
 
-### Animation: fully restored to the 1.x implementation
+There's a Chinese ranking meme, **from 夯 to 拉** — *夯* (hāng) means "solid, top tier",
+*拉* (lā) means "lame". Five levels, best to worst. Here's where this module lands,
+so nobody installs it expecting the wrong thing:
 
-As requested, the animation code is back to the block used by v1.1 through v1.6,
-**character for character**:
+| Tier | Covered by | Notes |
+|---|---|---|
+| **夯 (top)** | Fakery removal, telemetry shutdown, dex2oat core fix | The vendor wrote it wrong; fixing it is instant and uncontroversial |
+| **Good** | 3A charging, TCP tuning, ZRAM and logging off | Real gains, but hardware- and scenario-dependent |
+| **Meh** | Animation scales, UI real-time priority | Feeling, not benchmarks |
+| **拉 (lame)** | Sample rate, screen density, CPU governor | **Don't expect it** — hardware-locked or actively worse, see Red lines |
+
+---
+
+## Four packages, pick one
+
+| # | Package | Filename | For |
+|---|---|---|---|
+| ① | **HSC · with audio** | `SL8541E_Config_Fix_v2.1.3_HSC_Audio.zip` | HSC watch + wants V4A |
+| ② | **HSC · no audio** | `SL8541E_Config_Fix_v2.1.3_HSC.zip` | HSC watch, no audio |
+| ③ | **Universal · with audio** | `SL8541E_Config_Fix_v2.1.3_Universal_Audio.zip` | other SL8541E + wants V4A |
+| ④ | **Universal · no audio** | `SL8541E_Config_Fix_v2.1.3_Universal.zip` | other SL8541E, no audio |
+
+- **Device axis**: the HSC builds handle fakery / telemetry / biometrics — those property
+  names only exist on HSC firmware. Universal builds skip them and do only the
+  device-agnostic work.
+- **Audio axis**: the audio builds bundle ViPER4Android v6.0.1 (enable it in V4A's
+  advanced settings after install). The no-audio builds contain no V4A at all —
+  no APK, no library, no `audio_effects.conf` change, no SELinux rule.
+
+> ⚠ **All four share the same module ID, so only one can be installed at a time.**
+> Each has its **own update channel** (`update-hsc-audio.json` / `update-hsc.json` /
+> `update-uni-audio.json` / `update-uni.json`) — the Update button will only ever
+> move you to the same package type, never swap it for another.
+
+---
+
+## Changelog
+
+### v2.1.x — three cold-audit rounds
+
+I handed the code to an agent with **no context about this project** — no history,
+no README, just the files — and told it to find problems. Three rounds, all real bugs:
+
+- **Animation write-verification race**: `settings put` returns before the XML lands,
+  so the immediate read-back almost always failed → every boot fell into the direct-XML
+  fallback and logged a false alarm. Now it retries briefly before judging.
+- **mksh compatibility**: a `case` branch used a bash-only construct. The device runs
+  mksh, which is a hard syntax error.
+- **Uninstall restore**: `uninstall.sh` missed two persist properties; they survived
+  module removal.
+- **Removed a hollow jar**: the placeholder in `system/framework` had no content and
+  no reader.
+- Added `bash -n` checks and six regression tests that run offline.
+
+### v2.0 — V4A merged, four packages split out
+
+- Merged **ViPER4Android v6.0.1** (FX for Magisk v23; by ShadySquirrel, modified by
+  小白杨). APK, `libv4a_fx_ics.so` and `audio_effects.conf` are byte-identical to the originals.
+- SELinux policy is **adaptive**: `magiskpolicy` if present, else `apd` (APatch), else
+  skip and log.
+- One package became four; see the table above.
+
+### Animation: back to the 1.x implementation
 
 ```sh
-# animation fix (two-step)
 settings put global window_animation_scale 1.0
 settings put global transition_animation_scale 1.0
 settings put global animator_duration_scale 1.0
@@ -51,14 +121,18 @@ settings put global transition_animation_scale 0.75
 settings put global animator_duration_scale 0.5
 ```
 
-**A single pass** -- no loop, no guard process, no retry, no XML fallback. It sits at the end of
-`service.sh`, with `wait_boot()` guaranteeing it runs **after boot completes**.
+**A single pass** — no loop, no guard process, no retry, no XML fallback, no extra settle time.
 
-> Every variation tried in between (a 6-second gap, three passes, a background guard) has been
-> **reverted** -- the 1.x version is the only one repeatedly confirmed to work on the real device.
+> **Why it works**: the watch has to observe an **adjustment**, not just a value.
+> So the write must go through the `settings` command path (which fires
+> `CONFIGURATION_CHANGED`). Writing the XML directly produces no event and the
+> animation never activates.
+>
+> Everything tried in between — a 6-second gap, three passes, a background guard —
+> has been **reverted**. The 1.x version is the only one repeatedly confirmed
+> working on the real device.
 
-A regression test pins this down: 6 writes total, the target written **exactly once**, the value
-sequence `1.0 1.0 1.0 -> 0.75 0.75 0.5`, plus a source-level check that no loop or guard remains.
+---
 
 ## Features
 
@@ -80,6 +154,8 @@ APR suite, heartbeat, BS service, statistics, IoT, UDP collection, sales-service
 
 Fingerprint (master, app lock, app launch, Soter payment), face unlock.
 
+> The fingerprint sensor on this watch is imprecise and false-accepts often. Off saves power.
+
 ### Features enabled
 
 Camera refocus, double-tap recents, lock-screen wallpaper, developer options, eye-care,
@@ -87,9 +163,9 @@ fast-charge notification, hall camera, raise-to-wake.
 
 ### Performance & network
 
-- **dex2oat 4-core fix**: CPU set from the wrong `4,5,6,7` to `0,1,2,3`
-  (this SoC only has cores 0–3; with the wrong set dex2oat silently falls back to
-  single-threaded — nominally 4 cores, actually one core doing all the work)
+- **dex2oat 4-core fix**: CPU set from the wrong `4,5,6,7` to `0,1,2,3`. This SoC only
+  has cores 0–3; with the wrong set dex2oat silently falls back to single-threaded —
+  nominally four cores, actually one core doing all the work, and the slowest one at that.
 - TCP buffers, fast open, TIME_WAIT reuse, low-latency mode
 - Congestion control stays `cubic` (**this kernel has no BBR**)
 - Dynamic DNS guardian for GitHub
@@ -102,7 +178,7 @@ fast-charge notification, hall camera, raise-to-wake.
 ### Kernel
 
 - I/O scheduler `noop` (kernel has no `deadline`)
-- swappiness stays at stock `150`
+- swappiness stays at stock `150` (10 and 60 were both measured, neither helped)
 - ZRAM force-disabled
 - System logging reduced
 
@@ -110,8 +186,12 @@ fast-charge notification, hall camera, raise-to-wake.
 
 - Input limit raised from 500mA to 3000mA (3A)
 - Node unit is **µA**; the written value is `3000000`
-- **Must be written early at boot** (`post-fs-data`), the node locks afterwards
+- **Must be written early at boot** (`post-fs-data`); the node locks afterwards
 - **Actual speed depends on your charger and cable**
+
+3A only widens the pipe. A wider pipe isn't more pressure: a 5V 1A head still
+delivers about 890mA, and a computer's USB port stays at 500mA forever.
+The bottleneck is always at the wall.
 
 ### Animation / smoothness
 
@@ -184,6 +264,8 @@ Sample rate, bit depth, Bluetooth version and signal strength are hardware-locke
 
 Also fixed: 60Hz display, 880mAh battery, 3A charging ceiling.
 
+> Not laziness — there really is no register to write here.
+
 ---
 
 ## Deliberately not done
@@ -232,7 +314,7 @@ SL8541E_Config_Fix/
 
 ### How to change a property
 
-- **Add one**: edit `lib/prop.list` (`scope|key|value|why`), then mirror it into `system.prop`
+- **Add one**: edit `lib/prop.list` (`scope|key|variant|value|why`), then mirror it into `system.prop`
 - **`ro.*`**: must be written in *both* `system.prop` and `prop.list` — one alone always leaves half of them inert
 - **`persist.*`**: not removed automatically on uninstall; `uninstall.sh` picks them up from `prop.list`
 - **After editing**: reinstall the module or reboot
@@ -241,7 +323,7 @@ SL8541E_Config_Fix/
 
 ## Installation
 
-1. Download the package matching your device (table below)
+1. Download the package matching your device (table above)
 2. Root manager → Modules → Install from storage
 3. **Reboot** (no reboot = not installed; everything hangs off the boot hooks)
 4. Tap **WebUI** for the status page, or **Action** for the plain-text report
@@ -256,6 +338,7 @@ SL8541E_Config_Fix/
 su
 
 getprop persist.sys.5g                 # false
+getprop persist.sys.cpu                # 4
 getprop dalvik.vm.dex2oat-cpu-set      # 0,1,2,3
 getprop sys.use_fifo_ui                # 1
 
@@ -273,10 +356,11 @@ cat /data/adb/modules/SL8541E_Config_Fix/fix.log
 ## FAQ
 
 **Q: Is 3GB RAM real?**
-A: Yes. 8GB was faked.
+A: Yes. 8GB was written by the vendor; the watch physically has 3GB. This is one place
+it isn't fat — the fat is that `ram.set32g` line.
 
 **Q: Conflicts with V4A?**
-A: No. The module doesn't touch any V4A file.
+A: No. The module doesn't touch any V4A file; the audio builds fold V4A in unchanged.
 
 **Q: Can I get 96k/24bit audio?**
 A: No. Hardware-locked at 44100/16bit. USB DAC only.
@@ -290,7 +374,7 @@ A: No. Since Android 8.1 the WebView provider's signature must match the system
 framework. Google's doesn't. That's the security model, not a setting.
 
 **Q: Battery life worse?**
-A: The module doesn't touch CPU frequency or governor.
+A: The module doesn't touch CPU frequency or governor. If it feels worse, check `fix.log`.
 
 **Q: Will it brick my device?**
 A: It only changes properties, settings, sysctl and injects files — no partition writes.
@@ -298,7 +382,8 @@ Back up first anyway.
 
 **Q: How do I revert?**
 A: Remove the module + reboot. The bundled `uninstall.sh` clears the persist overrides
-and stops the guardian. Fakery returning afterwards is **expected**.
+and stops the guardian. Fakery returning afterwards is **expected** — it means the
+cleanup worked.
 
 ---
 
@@ -311,6 +396,9 @@ and stops the guardian. Fakery returning afterwards is **expected**.
 | Doesn't touch | screen density, Bluetooth version, signal strength, thermal, color |
 | Skipped | Google WebView, SurfaceFlinger color, CPU governor |
 
+**Flashing it on another watch?** Bold, but the likely outcome is a module that installs
+and does nothing — or one that writes to a charging node that doesn't exist and fails silently.
+
 ## Feedback
 
 Please include: the status-page screenshot or the Action report, `fix.log`, device model
@@ -318,8 +406,9 @@ and OS version, and reproduction steps.
 
 ## Credits
 
-- [Bili-bamacao](https://space.bilibili.com/1329200878) — project initiator, hardware testing
-- DeepSeek ("Big Fatty Fish") — code, refactor, gotcha log
+- [bamacao (Bilibili)](https://space.bilibili.com/1329200878) — project initiator, hardware testing, course corrections
+- DeepSeek — code, refactor, gotcha log
+- ShadySquirrel / 小白杨 — ViPER4Android v6.0.1 (Magisk port)
 
 ## License
 
@@ -327,6 +416,5 @@ and OS version, and reproduction steps.
 
 ---
 
-> 🐟 Big Fatty Fish
-> The watch's ceiling has been mapped. Everything worth squeezing, squeezed.
-> Now we wait for time — and the next price change.
+> Everything worth squeezing is squeezed. What's left isn't a code problem.
+> Bring logs, not vibes.
