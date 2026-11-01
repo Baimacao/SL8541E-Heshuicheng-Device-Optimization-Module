@@ -132,11 +132,42 @@ for _pf in "$MODDIR/.dnsguard.pid" "$MODDIR/.charge-keepalive.pid"; do
     [ -f "$_pf" ] || continue
     _pid=$(cat "$_pf" 2>/dev/null | tr -d ' \n')
     if [ -n "$_pid" ] && [ -d "/proc/$_pid" ]; then
-        kill "$_pid" 2>/dev/null
-        echo "  ✅ 已停止后台进程（pid $_pid）：$(basename "$_pf")" >> "$LOG"
+        # ⚠ 裸 kill 是危险的：pid 文件是上次开机写的，重启后 PID 会被复用，
+        #   撞上 system_server / zygote 就是一次系统崩溃。
+        #   所以先读 /proc/<pid>/cmdline，确认它确实是我们的脚本才动手。
+        #   读不到 cmdline（权限/进程刚退）时**不杀** —— 宁可留个孤儿进程，
+        #   也不能误杀系统进程。
+        _cmd=$(tr -d '\000' < "/proc/$_pid/cmdline" 2>/dev/null)
+        case "$_cmd" in
+            *dns-guard.sh*|*charge*|*SL8541E_Config_Fix*)
+                kill "$_pid" 2>/dev/null
+                echo "  ✅ 已停止后台进程（pid $_pid）：$(basename "$_pf")" >> "$LOG"
+                ;;
+            "")
+                echo "  ⚠ 跳过 pid $_pid（cmdline 读不到，无法确认身份）：$(basename "$_pf")" >> "$LOG"
+                ;;
+            *)
+                echo "  ⚠ 跳过 pid $_pid（cmdline=[$_cmd]，不是本模块的进程）：$(basename "$_pf")" >> "$LOG"
+                ;;
+        esac
     fi
     rm -f "$_pf" 2>/dev/null
 done
+# ── 还原被直写进 /system 的文件 ──
+#   ⚠ 这段是"直写方案"的配套，不能省。
+#   systemless 挂载重启就消失，但直写是**真的改了系统分区**：
+#   删模块、重启，文件照样留在 /system 里。不还原就等于装了卸不掉。
+#   备份与清单由 lib/sysinject.sh 在写入前建立。
+if [ -f "$MODDIR/lib/sysinject.sh" ] && [ -f "$MODDIR/.sysbak/manifest" ]; then
+    echo "── 还原 /system 下被直写替换的文件 ──" >> "$LOG"
+    (. "$MODDIR/lib/common.sh" 2>/dev/null
+     . "$MODDIR/lib/sysinject.sh" 2>/dev/null
+     sysinject_restore_out=$(si_restore_all 2>&1)
+     echo "$sysinject_restore_out" >> "$LOG") || echo "  ⚠ 还原过程出错" >> "$LOG"
+    echo "（若此处报 remount 失败：手动把 /system 里那 5 个文件删掉即可，不影响 Root）" >> "$LOG"
+    rm -rf "$MODDIR/.sysbak" 2>/dev/null
+fi
+
 rm -f "$MODDIR/.run.lock" "$MODDIR/.run" 2>/dev/null
 rm -f "$MODDIR/webroot/status_generated.html" "$MODDIR/webroot/status_generated.html.tmp" 2>/dev/null
 

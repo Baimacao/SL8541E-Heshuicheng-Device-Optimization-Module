@@ -22,6 +22,34 @@ out() { echo "$1|$2"; }
 
 out "VER" "$(module_version)"
 
+# ── 运行环境（根管理器 / 元模块 / 挂载）──
+#   ⚠ 走缓存，不在这里跑 pm list packages —— WebUI 每次切 Tab 都会重跑本脚本，
+#     加一次包名扫描就等于每次切页多等一秒。缓存由 action.sh --refresh 刷新。
+#   这条也是本次新增的重点：KSU 下没装元模块时 system/ 不挂载，
+#   以前状态页一片绿，实际 V4A 和 Wear OS 库根本没生效。
+root_manager_detect
+out "ROOT_NAME"   "$ROOT_NAME"
+out "ROOT_FAMILY" "$ROOT_FAMILY"
+
+_MM=$(metamodule_status)
+case "$_MM" in
+    active:*)  out "METAMODULE" "${_MM#active:}" ;;
+    none)      out "METAMODULE" "none" ;;
+    not_applicable) out "METAMODULE" "na" ;;
+    *)         out "METAMODULE" "unknown" ;;
+esac
+out "SYS_MOUNT" "$(module_mount_state)"
+
+# system/ 里的文件到底生效没 —— 这才是关键判据。
+#   本机内核无 overlayfs，元模块装了也没用，所以不看"有没有元模块"，
+#   只看"文件在不在 /system 上"。由 lib/sysinject.sh 判定。
+if [ -f "$MODDIR/lib/sysinject.sh" ]; then
+    . "$MODDIR/lib/sysinject.sh"
+    out "SYSINJ" "$(sysinject_report)"
+else
+    out "SYSINJ" "unknown"
+fi
+
 # ── 更新状态（由 lib/install.sh check 写进 update.state）──
 UPD_STATE="$MODDIR/update.state"
 if [ -f "$UPD_STATE" ]; then
@@ -65,7 +93,8 @@ out "NET_RMEM" "$(cat /proc/sys/net/core/rmem_max 2>/dev/null)"
 out "NET_WMEM" "$(cat /proc/sys/net/core/wmem_max 2>/dev/null)"
 out "NET_CC"   "$(cat /proc/sys/net/ipv4/tcp_congestion_control 2>/dev/null)"
 out "NET_RWND" "$(chkv net.tcp.default_init_rwnd 256)"
-out "NET_HOSTS" "$([ -f /system/etc/hosts ] && echo 1 || echo 0)"
+# 同 action.sh：[ -f ] 判挂载在原厂 ROM 上恒真，必须走 mount_proof
+case "$(mount_proof system/etc/hosts)" in yes:*) out "NET_HOSTS" "1" ;; *) out "NET_HOSTS" "0" ;; esac
 out "NET_GHIP"  "$(grep -E '^[0-9.]+[[:space:]]+github\.com' /system/etc/hosts 2>/dev/null | head -1 | tr -s ' ' | cut -d' ' -f1)"
 if [ -f "$MODDIR/.dnsguard.pid" ] && [ -d "/proc/$(cat "$MODDIR/.dnsguard.pid" 2>/dev/null | tr -d ' \n')" ]; then
     out "NET_DNSGUARD" "1"

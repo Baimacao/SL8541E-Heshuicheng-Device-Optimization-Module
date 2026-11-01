@@ -55,9 +55,15 @@ net_ok() {
     return 1
 }
 # hosts 里 github.com 当前指向哪个 IP（空 = 没有条目）
+#   $1 传 live 时读**挂载后**的 /system/etc/hosts —— 那才是用户实际生效的那份。
+#   默认读模块内那份（维护候选池用）。
+#   ⚠ 两个视图必须分开：只用模块内那份做校验，等于自己跟自己比对，
+#     bind mount 失败也照样"验证通过"。
 current_gh_ip() {
-    [ -f "$HOSTS" ] || return 1
-    grep -E '^[0-9.]+[[:space:]]+github\.com' "$HOSTS" 2>/dev/null | head -1 | tr -s ' ' | cut -d' ' -f1
+    _f="$HOSTS"
+    [ "${1:-}" = "live" ] && _f="/system/etc/hosts"
+    [ -f "$_f" ] || return 1
+    grep -E '^[0-9.]+[[:space:]]+github\.com' "$_f" 2>/dev/null | head -1 | tr -s ' ' | cut -d' ' -f1
 }
 
 # ── 写入并**验证**是否真的生效 ──────────────────────────────────────────────
@@ -66,10 +72,31 @@ apply_ip() {
     _ip="$1"
     [ -f "$HOSTS" ] || { log "hosts 不存在，放弃切换"; return 1; }
 
-    _err=$( { sed -i '/github\.com/d' "$HOSTS"; } 2>&1 )
-    if [ -n "$_err" ]; then log "⚠ 清理旧条目失败：$_err"; return 1; fi
+    #  ⚠ 这里**绝不能**用 `sed -i`（v2.1.3 之前就是，属于真 bug）：
+    #    sed -i 的做法是"写新文件再 rename"，inode 会变。而 $HOSTS 这个文件
+    #    已经被 service.sh 用 `mount --bind` 挂到了 /system/etc/hosts 上，
+    #    绑定挂载跟的是**旧的 inode**。于是：
+    #      我们改的是新 inode → 读回校验通过 → 日志写"已切到 X"
+    #      但 /system/etc/hosts 还是旧 inode → 用户侧毫无变化
+    #    守护进程自证成功，故障却一点没解决。这正是 common.sh 里那条
+    #    "不用 sed -i" 纪律要防的事，只是当时只在 settings XML 那边执行了。
+    #    改成"写到临时文件 → cat 原地覆写"：`> ` 不换 inode，bind mount 才看得见。
+    _tmp="$MODDIR/.hosts.new"
+    _err=$( { sed '/github\.com/d' "$HOSTS" > "$_tmp"; } 2>&1 )
+    if [ -n "$_err" ] || [ ! -s "$_tmp" ]; then
+        log "⚠ 清理旧条目失败：${_err:-结果为空}"
+        rm -f "$_tmp" 2>/dev/null
+        return 1
+    fi
     _err=$( { printf '%s github.com\n%s www.github.com\n%s api.github.com\n%s codeload.github.com\n' \
-              "$_ip" "$_ip" "$_ip" "$_ip" >> "$HOSTS"; } 2>&1 )
+              "$_ip" "$_ip" "$_ip" "$_ip" >> "$_tmp"; } 2>&1 )
+    if [ -n "$_err" ]; then
+        log "⚠ 构造新 hosts 失败：$_err"
+        rm -f "$_tmp" 2>/dev/null
+        return 1
+    fi
+    _err=$( { cat "$_tmp" > "$HOSTS"; } 2>&1 )
+    rm -f "$_tmp" 2>/dev/null
     if [ -n "$_err" ]; then log "⚠ 写入 hosts 失败：$_err"; return 1; fi
 
     _err=$(mount --bind "$HOSTS" /system/etc/hosts 2>&1)
@@ -79,8 +106,8 @@ apply_ip() {
     setprop net.dns1 8.8.8.8 2>/dev/null
     setprop net.dns2 114.114.114.114 2>/dev/null
 
-    # 验证：hosts 里真的写进去了吗？
-    _now=$(current_gh_ip)
+    # 验证：读**挂载后**的视图 —— 确认用户侧真的看到了新 IP
+    _now=$(current_gh_ip live)
     if [ "$_now" = "$_ip" ]; then
         if [ "$_mounted" = "1" ]; then
             log "已切到 $_ip（hosts 已生效）"

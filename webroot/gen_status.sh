@@ -148,6 +148,28 @@ rowv "过渡动画"      "$(kv ANIM_TRANS)x"
 rowv "动画时长"      "$(kv ANIM_DUR)x"
 endc
 
+card "RUNTIME · 运行环境"
+rowv "根管理器"      "$(kv ROOT_NAME)"
+# 元模块这一行是 KSU 专属概念：别的根管理器显示"不适用"而不是"未装"，
+# 免得用户以为出了问题去乱装东西。
+case "$(kv METAMODULE)" in
+    na)      rowv "元模块" "不适用（挂载内置）" ;;
+    none)    rowv "元模块" "未装 ⚠" ;;
+    unknown) rowv "元模块" "无法确定" ;;
+    *)       rowv "元模块" "$(kv METAMODULE)" ;;
+esac
+# system/ 文件状态：用户真正关心的那一项
+#   本机内核无 overlayfs，元模块用不了，所以判据是"文件在不在 /system 上"。
+case "$(kv SYSINJ)" in
+    rootmgr) rowv "system/ 文件" "根管理器已挂载" ;;
+    ok)      rowv "system/ 文件" "已就位" ;;
+    mirror)  rowv "system/ 文件" "目录镜像注入（重启需重做）" ;;
+    na)      rowv "system/ 文件" "已跳过" ;;
+    fail)    rowv "system/ 文件" "未生效 ⚠" ;;
+    *)       rowv "system/ 文件" "—" ;;
+esac
+endc
+
 card "WEAR_OS · 环境"
 row "wearable.jar"   "$(badge "$(kv WEAR_JAR)")"
 row "permissions"    "$(badge "$(kv WEAR_XML)")"

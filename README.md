@@ -72,10 +72,10 @@ persist.sys.cpu=10    # 四核标十核
 
 | # | 包 | 文件名 | 适合 |
 |---|---|---|---|
-| ① | **HSC 特供 · 有音效** | `SL8541E_Config_Fix_v2.1.3_HSC_Audio.zip` | 和顺成方案手表 + 想要 V4A 音效 |
-| ② | **HSC 特供 · 无音效** | `SL8541E_Config_Fix_v2.1.3_HSC.zip` | 和顺成方案手表，不要音效 |
-| ③ | **通用 · 有音效** | `SL8541E_Config_Fix_v2.1.3_Universal_Audio.zip` | 其他 SL8541E 设备 + 想要 V4A 音效 |
-| ④ | **通用 · 无音效** | `SL8541E_Config_Fix_v2.1.3_Universal.zip` | 其他 SL8541E 设备，不要音效 |
+| ① | **HSC 特供 · 有音效** | `SL8541E_Config_Fix_v2.1.4_HSC_Audio.zip` | 和顺成方案手表 + 想要 V4A 音效 |
+| ② | **HSC 特供 · 无音效** | `SL8541E_Config_Fix_v2.1.4_HSC.zip` | 和顺成方案手表，不要音效 |
+| ③ | **通用 · 有音效** | `SL8541E_Config_Fix_v2.1.4_Universal_Audio.zip` | 其他 SL8541E 设备 + 想要 V4A 音效 |
+| ④ | **通用 · 无音效** | `SL8541E_Config_Fix_v2.1.4_Universal.zip` | 其他 SL8541E 设备，不要音效 |
 
 - **机型维度**：HSC 特供会处理虚标 / 云控 / 指纹人脸（这些属性名只有和顺成方案才有）；
   通用包不碰这些，只做与机型无关的部分。
@@ -294,12 +294,16 @@ SL8541E_Config_Fix/
 ├── module.prop                     模块元信息
 ├── system.prop                     开机注入属性（ro.* / persist.* 默认值）
 ├── post-fs-data.sh                 开机最早：属性 + ZRAM + 充电 3A
+├── post-mount.sh                   ★ 仅 KSU：验证 system/ 是否真的挂上了
+├── diag-mount.sh                   挂载能力诊断（判断该走哪条路）
 ├── service.sh                      开机完成：二次保险 + sysctl + DNS + 设置项
+├── boot-completed.sh               ★ 仅 KSU：动画时机兜底
 ├── action.sh                       「操作」按钮：刷新状态页 + 文本体检报告
 ├── customize.sh                    安装入口（★ APatch 不执行 update-binary）
 ├── uninstall.sh                    卸载：清 persist 属性 + 停守护
 ├── lib/
-│   ├── common.sh                   公共库：属性/电池/设置项/节点解析/HTTP/版本比较
+│   ├── common.sh                   公共库：属性/电池/设置项/根管理器识别/版本比较
+│   ├── sysinject.sh                ★ 把 system/ 文件弄进 /system（本机无 overlayfs 的兜底）
 │   ├── prop.list                   ★ 属性清单（唯一事实来源）
 │   ├── install.sh                  ★ 从 GitHub 检查并安装更新
 │   └── dns-guard.sh                GitHub 动态 DNS 守护
@@ -412,6 +416,37 @@ A：根管理器删模块 + 重启。内置 `uninstall.sh` 会清掉 persist 覆
 | 不适用 | 其他方案（属性名对不上，表现是「装了个寂寞」） |
 | 不改 | 屏幕密度、蓝牙版本、信号强度、温控、色彩 |
 | 不做 | Google WebView、SurfaceFlinger 色彩、CPU governor |
+
+### 不同根管理器的挂载方式（会影响哪些功能生效）
+
+| 根管理器 | `system/` 挂载方式 |
+|---|---|
+| **Magisk** | 内置 Magic Mount，直接生效 |
+| **APatch（新版）** | **移除了内置挂载，必须装元模块** |
+| **FolkPatch** | 三种：① 内置 Magic Mount（开关在设置里）② 元模块 ③ **默认不挂载** |
+| **KernelSU / SukiSU / KSU-Next** | 元模块 |
+
+**元模块不是 KSU 独有** —— APatch 新版和 FolkPatch 都有这套机制
+（`module.prop` 里 `metamodule=1`，钩子叫 `metamount.sh`）。
+
+**但元模块几乎全部依赖 overlayfs。** 本机内核（4.4.83）没编 overlayfs，
+实测 `mount -t overlay` 直接 `No such device` —— 所以 `meta-overlayfs` /
+`meta-rs` / `meta-hybrid` 这些**装了也用不了**。
+
+#### 那本模块怎么办
+
+不靠元模块。`lib/sysinject.sh` 自己把 `system/` 里的文件弄进 `/system`，两级策略：
+
+| 方式 | 做法 | 特点 |
+|---|---|---|
+| **① 直写**（默认） | `mount -o remount,rw /system` → 写文件 → 恢复 `ro` | 重启后仍在，最干净。**写前强制备份，卸载时还原** |
+| ② 目录镜像（需手动开启） | tmpfs 镜像目录 + `bind` 整目录 | 不依赖 overlayfs，但要复制整个目录、重启失效 |
+
+只对**本模块自己的文件**动手，不删不改系统原有文件。备份在
+`.sysbak/`，`uninstall.sh` 会按清单还原（原本没有的就删掉）。
+
+> 属性、TCP、充电、动画这些**根本不需要挂载**，任何根管理器下都正常。
+> 依赖 `system/` 的只有：Wear OS 库、hosts 加速。
 
 **想刷到别的表上？** 结果大概率是装了个寂寞，或者写进一个不存在的
 充电节点然后静默失败。不建议。

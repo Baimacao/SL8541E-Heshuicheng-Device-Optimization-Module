@@ -1,5 +1,97 @@
 # 更新日志
 
+## v2.1.4
+
+**审计 + 让 system/ 真正生效。** 四条高危缺陷、一条一直没解决的老问题。
+
+### 新增：不依赖 overlayfs 的 system/ 注入
+
+本机内核 4.4.83 **没编 overlayfs**，所有 meta-overlayfs 类元模块装了也用不了；
+FolkPatch 的 Magic Mount 是 bind mount，**只能覆盖已存在路径、不能新增文件**，
+而 Wear OS 那两个文件系统里本来就没有 —— 所以 system/ 从来没真正生效过。
+
+新增 `lib/sysinject.sh`：直写 `/system`（`remount,rw` → 写 → `restorecon` → `remount,ro`），
+重启后仍有效。**写前强制备份，卸载时按 manifest 还原**（原本没有的删掉）。
+目录镜像方案作为可选手动启用的降级路径。
+
+实测依据见 `diag-mount.sh`：remount rw 成功、bind 可用、tmpfs+目录 bind 可用。
+
+### 修正：元模块的适用范围
+
+上一版写错成"元模块是 KSU 独有"。实际：APatch 新版**移除了内置挂载必须装元模块**，
+FolkPatch 同时有内置 Magic Mount 和元模块两套。只有 Magisk 没有这个概念。
+`metamodule_status` 的 `not_applicable` 因此收窄到仅 Magisk。
+
+### 新增：元模块检测
+
+KernelSU 把 `system/` 的挂载委托给元模块（官方设计，如 `meta-overlayfs`）。
+没装元模块时，模块的 `system/` 一个字节都挂不上，但 `post-fs-data.sh` / `service.sh` /
+`system.prop` 全都照常执行 —— 于是出现最难查的故障：**日志全绿、属性都写了、
+报告全 ✓，V4A 和 Wear OS 库就是不生效。**
+
+现在模块自己检测并说清楚：
+
+| 位置 | 显示内容 |
+|---|---|
+| 「操作」报告 | 根管理器 / 元模块 / `system/` 挂载 三项 |
+| WebUI | `RUNTIME` 卡片 |
+| `fix.log` | `post-mount.sh` 与 `boot-completed.sh` 各记一次 |
+
+三种结论分开对待，不制造假警报：
+- **非 KSU 族** → `not_applicable`（Magisk / APatch / FolkPatch 的挂载是内置的，没这个概念）
+- **KSU + 没元模块** → 明确警告，并给出「装 meta-overlayfs 后重启」
+- **KSU + 有元模块但没挂上** → 提示查 `disable` / `skip_mount` 标记或元模块自身
+
+新增两个钩子（**都是 KernelSU 专有，其它根管理器不会调用**）：
+- `post-mount.sh` —— 挂载刚结束、系统还没起完，唯一能准确取证的窗口
+- `boot-completed.sh` —— 动画时机兜底（只检查、不到位才补，到位不动）
+
+### 修复：根管理器识别
+
+旧逻辑先判 `MAGISK_VER_CODE` 再判 KSU，而 **KernelSU 官方文档写明该变量在 KSU 下恒为
+25200**，并明确要求「不要通过这两个变量判断是否是 KernelSU」—— 等于把 KSU 认成 Magisk。
+
+重写为「目录证据优先」：`/data/adb/ksu` → `/data/adb/ap` → `MAGISK_VER_CODE`。
+另外 FolkPatch 是 APatch 的分支、目录布局完全相同，旧代码一律报「APatch」；
+现在按包名区分，**分不出来就报「APatch/FolkPatch（分支未知）」，不硬报 APatch**。
+SukiSU / KernelSU-Next 同理。
+
+### 修复：四条高危
+
+1. **`hosts` 挂载判断恒真**：`[ -f /system/etc/hosts ]` 在原厂 ROM 上永远成立，
+   报告却据此说「已挂载 ✓」。改用 `mount_proof` —— 讽刺的是同文件里对 Wear OS 库
+   早就在用它，两套口径并存。`action.sh` 和 `webroot/status.sh` 都改了。
+2. **`dns-guard.sh` 用 `sed -i` 改已 bind-mount 的文件**：`sed -i` 会换 inode，
+   而绑定挂载跟的是旧 inode。结果守护进程读回校验通过、日志写「已切到 X」，
+   用户侧毫无变化。改成「写临时文件 → `cat` 原地覆写」保 inode。
+   同时把校验改成读**挂载后**的 `/system/etc/hosts`，不再自己跟自己比对。
+3. **APatch 兜底安装的备份污染模块扫描**：备份放在 `/data/adb/modules/<id>.bak`，
+   里面带着同 id 的 `module.prop` + 整棵 `system/`，根管理器会当成第二个模块，
+   两条 overlay lowerdir 指向同一路径 —— 实测表现是「更新后 V4A / Wear OS 库时有时无」。
+   备份挪到模块目录下的 `.apatch-prev`，并删掉其中的 `module.prop`。
+4. **改写 `module.prop` 前不校验**：`set_list_hint` 里 sed 输出直接 `mv` 覆盖，
+   一旦 sed 失败或磁盘满，`module.prop` 变成空文件 —— 模块从管理器列表里消失、
+   `updateJson` 一并丢失。现在要求结果非空且仍含 `id=` / `versionCode=` 才覆盖。
+
+### 修复：两条中危
+
+- **卸载时裸 `kill`**：pid 文件是上次开机写的，重启后 PID 复用，撞上 `system_server`
+  就是一次系统崩溃。现在先读 `/proc/<pid>/cmdline` 确认是本模块的进程才动手，
+  读不到就不杀（宁可留孤儿进程）。
+- **`wait_boot` 空转**：`sys.boot_completed` 读不到时仍硬等满 120 秒。
+  加「连续 3 次读不到就停」的早退 —— 读不到不等于没完成，但也不能白等两分钟。
+
+### 验证
+
+- 新增 `_tools/test-rootmanager.sh`，**15 项断言全过**。用假目录结构把
+  ksu / ap / magisk / 无证据 / 元模块已装 / 元模块被禁用 / skip_mount / disable
+  等各种组合都摆一遍，并带一条**反向验证**（删掉关键目录后结论必须变），
+  防止测试本身没有鉴别力。
+- 写测试时立刻抓到 3 个问题：2 个是测试自己的场景没搭对，1 个是代码里的
+  `unknown` 分支在真机上不可达（模块自己就在 `modules/` 下跑），已删除。
+- `preflight.sh` 新增 4b 节，检查两个新钩子确实调用检测函数、根管理器判定包含
+  目录兜底、非 KSU 族返回 `not_applicable`。
+
 ## v2.1.3
 
 **只改文案与发版工具链，功能代码未改动。**

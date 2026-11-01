@@ -136,7 +136,7 @@ say ""
 # ── 权限落位 ───────────────────────────────────────────────────────────────
 set_perm_recursive "$MODPATH" 0 0 0755 0644
 
-for f in customize.sh post-fs-data.sh service.sh action.sh uninstall.sh; do
+for f in customize.sh post-fs-data.sh post-mount.sh service.sh boot-completed.sh action.sh uninstall.sh; do
     [ -f "$MODPATH/$f" ] && set_perm "$MODPATH/$f" 0 0 0755
 done
 

@@ -51,6 +51,165 @@ fish_log() {
 HAS_RESETPROP=0
 command -v resetprop >/dev/null 2>&1 && HAS_RESETPROP=1
 
+# ── 根管理器识别 ────────────────────────────────────────────────────────────
+#  为什么不能只靠 $KSU / $APATCH 环境变量：
+#    · 这些变量只注入在根管理器自己的进程里。WebUI 的 status.sh、用户手敲的
+#      `su -c 'sh action.sh'`、nohup 起的后台守护，全都拿不到 —— 于是同一个模块，
+#      点「操作」显示 KernelSU，状态页却显示"未知"。
+#    · KernelSU 官方文档写明：MAGISK_VER_CODE 在 KSU 下**恒为 25200**，
+#      并明确要求"不要通过这两个变量判断是否是 KernelSU"。
+#      所以绝不能先判 Magisk —— 那会把 KSU 认成 Magisk。
+#  所以改成「目录证据优先，环境变量补充」，顺序是 KSU → APatch 系 → Magisk。
+#     /data/adb/ksu  → KernelSU 系（KSU / SukiSU / KernelSU-Next / 各类 fork）
+#     /data/adb/ap   → APatch 系（APatch / FolkPatch）
+#  精确到具体分支只能看已装的管理器包名；查不到就退到族名，绝不瞎猜。
+#
+#  ⚠ 包名探测要跑 `pm list packages`（秒级），不能每次都做。
+#    结果缓存在 $MODDIR/.rootinfo，由 action.sh 负责刷新。
+ROOT_FAMILY=""
+ROOT_NAME=""
+ROOT_VER="-"
+
+root_cache_file() { echo "$MODDIR/.rootinfo"; }
+
+# 读缓存（快路径）：命中就把三个变量填好并返回 0
+root_cache_load() {
+    _cf=$(root_cache_file)
+    [ -f "$_cf" ] || return 1
+    _fam=$(grep '^family=' "$_cf" 2>/dev/null | head -1 | cut -d= -f2-)
+    _nm=$(grep '^name='  "$_cf" 2>/dev/null | head -1 | cut -d= -f2-)
+    _vr=$(grep '^ver='   "$_cf" 2>/dev/null | head -1 | cut -d= -f2-)
+    [ -n "$_fam" ] || return 1
+    ROOT_FAMILY="$_fam"; ROOT_NAME="$_nm"; ROOT_VER="${_vr:--}"
+    [ -n "$ROOT_NAME" ] || ROOT_NAME="$_fam"
+    return 0
+}
+
+root_cache_save() {
+    _cf=$(root_cache_file)
+    {
+        echo "family=$ROOT_FAMILY"
+        echo "name=$ROOT_NAME"
+        echo "ver=$ROOT_VER"
+    } > "$_cf" 2>/dev/null
+}
+
+# 包名是否已安装。pm 在开机早期不可用 —— 失败一律当"查不到"，不当"没装"，
+# 否则会把 KernelSU 误判成 APatch/FolkPatch 这种反转结论。
+_pkg_installed() {
+    command -v pm >/dev/null 2>&1 || return 1
+    pm list packages 2>/dev/null | grep -q "package:$1\$" 2>/dev/null
+}
+
+# root_manager_detect [--refresh]
+#   组好 ROOT_FAMILY(ksu|apatch|magisk|unknown) / ROOT_NAME / ROOT_VER。
+#   不带参数走缓存；带 --refresh 强制重扫并刷新缓存（action.sh 用）。
+root_manager_detect() {
+    _refresh=0
+    [ "${1:-}" = "--refresh" ] && _refresh=1
+
+    [ "$_refresh" = "0" ] && root_cache_load && return 0
+
+    ROOT_FAMILY="unknown"; ROOT_NAME="未知"; ROOT_VER="-"
+
+    if [ -d /data/adb/ksu ]; then
+        ROOT_FAMILY="ksu"
+        ROOT_VER="${KSU_VER_CODE:-${KSU_KERNEL_VER_CODE:-}}"
+        # 分支包名互不相同，认得出就报准名字
+        if   [ -n "${KSU_VER:-}" ] && _pkg_installed "com.sukisu.ultra";   then ROOT_NAME="SukiSU Ultra"
+        elif _pkg_installed "com.sukisu.ultra";                            then ROOT_NAME="SukiSU Ultra"
+        elif _pkg_installed "com.rifsxd.ksunext";                          then ROOT_NAME="KernelSU-Next"
+        else ROOT_NAME="KernelSU"
+        fi
+    elif [ -d /data/adb/ap ]; then
+        ROOT_FAMILY="apatch"
+        ROOT_VER="${APATCH_VER_CODE:-}"
+        # FolkPatch 是 APatch 的分支，目录布局一模一样，只能靠包名分。
+        # 都认不出时**不许**硬报 "APatch" —— v2.1.3 之前就是这个错，
+        # 明明装的是 FolkPatch，报告里却写着 APatch。
+        if   _pkg_installed "org.folkpatch.app"; then ROOT_NAME="FolkPatch"
+        elif _pkg_installed "me.bmax.apatch";    then ROOT_NAME="APatch"
+        else ROOT_NAME="APatch/FolkPatch（分支未知）"
+        fi
+    elif [ -n "${MAGISK_VER_CODE:-}" ]; then
+        ROOT_FAMILY="magisk"
+        ROOT_NAME="Magisk"; ROOT_VER="$MAGISK_VER_CODE"
+    fi
+
+    [ -n "$ROOT_VER" ] || ROOT_VER="-"
+    [ "$_refresh" = "1" ] && root_cache_save
+    return 0
+}
+
+# ── 元模块（KernelSU 专属机制）──────────────────────────────────────────────
+#  KernelSU 官方文档：模块的 system/ 目录**由元模块负责挂载**（如 meta-overlayfs）。
+#  没装元模块时，system/ 一个字节都不会挂上，但 post-fs-data.sh / service.sh /
+#  system.prop 照常执行 —— 于是出现最难查的一类故障：
+#  **脚本全绿、日志全对、属性都写了，V4A 和 Wear OS 库就是不生效**。
+#  这正是加这段检测的理由：把"没挂上"从"玄学"变成"一眼可见"。
+#
+#  APatch / FolkPatch / Magisk 的挂载是内置的，没有这个概念，
+#  所以非 ksu 族一律返回 not_applicable —— 不算故障，也不刷日志。
+#
+#  识别依据：元模块在 module.prop 里声明 metamodule=1。
+#  （KSU 若改了这个字段，这里要跟着改；拿不准时宁可报 unknown 也不报"没装"。）
+metamodule_status() {
+    # 回显：active:<模块id> / none / not_applicable
+    #
+    #  ⚠ 支持范围（v2.1.4 修正，之前写错了）：
+    #    · KernelSU 系  → 有元模块机制
+    #    · APatch       → 新版**移除了**内置挂载，必须装元模块
+    #    · FolkPatch    → 同时有「内置 Magic Mount」和「元模块」两套
+    #    · Magisk       → 挂载内置在核心里，没有元模块概念
+    #    所以只有 Magisk 才返回 not_applicable。
+    root_manager_detect
+    case "$ROOT_FAMILY" in
+        ksu|apatch) : ;;                       # 这两族都可能用元模块
+        *)          echo "not_applicable"; return 0 ;;
+    esac
+
+    [ -d /data/adb/modules ] || { echo "unknown"; return 0; }
+
+    _mm=""
+    for _d in /data/adb/modules/*; do
+        [ -d "$_d" ] || continue
+        [ -f "$_d/module.prop" ] || continue
+        grep -q '^metamodule=1' "$_d/module.prop" 2>/dev/null || continue
+        [ -f "$_d/disable" ] && continue      # 被禁用的元模块等于没有
+        [ -f "$_d/remove" ]  && continue
+        _mm=$(basename "$_d")
+        break
+    done
+
+    if [ -n "$_mm" ]; then
+        echo "active:$_mm"
+    else
+        # 走到这里就是"没装元模块"。
+        # ⚠ 曾经还分出一个 unknown 分支（一个 module.prop 都没扫到视为扫描失败）。
+        #   但本模块自己就在 /data/adb/modules/SL8541E_Config_Fix 下跑，
+        #   只要脚本能执行，那个目录就必然存在 —— 真机上永远不可能"一个都没扫到"。
+        #   那个分支只会让结论多一种含糊说法，反而弱化警告。删掉。
+        echo "none"
+    fi
+}
+
+# module_mount_state → mounted / unmounted / skipped / disabled / unknown
+#   回答"我这个模块的 system/ 到底挂上没"，比逐个文件 mount_proof 更直接。
+module_mount_state() {
+    if [ -f "$MODDIR/remove" ];    then echo "disabled"; return 0; fi
+    if [ -f "$MODDIR/disable" ];   then echo "disabled"; return 0; fi
+    if [ -f "$MODDIR/skip_mount" ]; then echo "skipped";  return 0; fi
+
+    # 用最能区分"原厂也有同名文件"的那个文件来取证（Wear OS jar 原厂没有）
+    _probe="system/framework/com.google.android.wearable.jar"
+    [ -f "$MODDIR/$_probe" ] || _probe="system/etc/hosts"
+
+    case "$(mount_proof "$_probe")" in
+        yes:*) echo "mounted" ;;
+        *)     echo "unmounted" ;;
+    esac
+}
+
 # prop_set <key> <value>
 #   读到旧值才写：resetprop -n 每次都会落盘 persistent_properties，
 #   开机路径上无脑刷写等于白送 I/O。
@@ -574,9 +733,22 @@ settings_xml_force() {
 }
 
 # ── 等开机完成 ──
+#  ⚠ 上限 60×2=120 秒 + 5 秒沉降。原来这里最坏会空转两分钟：
+#    如果开机其实早就完成、只是 getprop 被 SELinux 挡了，循环照样跑满。
+#    现在加一条"连续 3 次读到空就认输"的早退：读不到不等于没完成，
+#    但读不到还硬等 120 秒纯属浪费开机时间。
+#    真正精确的时机交给 boot-completed.sh（KSU 专有，见该文件说明）。
 wait_boot() {
-    _n=0
+    _n=0; _empty=0
     while [ "$(getprop sys.boot_completed 2>/dev/null)" != "1" ] && [ "$_n" -lt 60 ]; do
+        _cur=$(getprop sys.boot_completed 2>/dev/null)
+        if [ -z "$_cur" ]; then
+            _empty=$((_empty + 1))
+            # 连续 3 次读不到（6 秒）→ 大概率是属性服务不可读，不再空等
+            [ "$_empty" -ge 3 ] && { fish_log "sys.boot_completed 连续 3 次读不到，停止等待（不视为失败）"; break; }
+        else
+            _empty=0
+        fi
         sleep 2
         _n=$((_n + 1))
     done
@@ -734,9 +906,21 @@ module_install_apatch() {
     fi
 
     _target="$_aproot/$_id"
+
+    # ⚠ 备份**不能**放在 $_aproot 下（v2.1.3 之前放在 "$_target.bak"，是错的）：
+    #   /data/adb/modules 里的每个子目录都会被根管理器当成一个模块来扫描。
+    #   "$_target.bak" 里带着同一份 module.prop（同 id）+ 整棵 system/，
+    #   于是根管理器看到两个同 id 模块、两条指向同一路径的 lowerdir，
+    #   挂载结果取决于目录扫描顺序 —— 实测表现是"更新后 V4A / Wear OS 库时有时无"。
+    #   备份挪到模块自己的目录下（不参与模块扫描），并且只保留最近一份。
+    _bak="$MODDIR/.apatch-prev"
+    rm -rf "$_bak" 2>/dev/null
     if [ -d "$_target" ]; then
-        rm -rf "$_target.bak" 2>/dev/null
-        cp -a "$_target" "$_target.bak" 2>/dev/null
+        mkdir -p "$_bak" 2>/dev/null
+        cp -a "$_target"/. "$_bak"/ 2>/dev/null
+        # 备份里绝不能留 module.prop：万一这个目录被别的工具误扫，
+        # 也不至于再多出一个同 id 的"模块"。
+        rm -f "$_bak/module.prop" 2>/dev/null
     fi
 
     mkdir -p "$_target" 2>/dev/null
@@ -756,7 +940,7 @@ module_install_apatch() {
     rm -rf "$_stage" 2>/dev/null
 
     [ -f "$_target/module.prop" ] || return 1
-    fish_log "APatch 兜底完成：已覆盖 $_target（旧版备份在 $_target.bak）"
+    fish_log "APatch 兜底完成：已覆盖 $_target（旧版备份在 $MODDIR/.apatch-prev，不含 module.prop）"
     return 0
 }
 

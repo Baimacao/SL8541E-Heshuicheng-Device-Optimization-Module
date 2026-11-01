@@ -63,10 +63,10 @@ so nobody installs it expecting the wrong thing:
 
 | # | Package | Filename | For |
 |---|---|---|---|
-| ① | **HSC · with audio** | `SL8541E_Config_Fix_v2.1.3_HSC_Audio.zip` | HSC watch + wants V4A |
-| ② | **HSC · no audio** | `SL8541E_Config_Fix_v2.1.3_HSC.zip` | HSC watch, no audio |
-| ③ | **Universal · with audio** | `SL8541E_Config_Fix_v2.1.3_Universal_Audio.zip` | other SL8541E + wants V4A |
-| ④ | **Universal · no audio** | `SL8541E_Config_Fix_v2.1.3_Universal.zip` | other SL8541E, no audio |
+| ① | **HSC · with audio** | `SL8541E_Config_Fix_v2.1.4_HSC_Audio.zip` | HSC watch + wants V4A |
+| ② | **HSC · no audio** | `SL8541E_Config_Fix_v2.1.4_HSC.zip` | HSC watch, no audio |
+| ③ | **Universal · with audio** | `SL8541E_Config_Fix_v2.1.4_Universal_Audio.zip` | other SL8541E + wants V4A |
+| ④ | **Universal · no audio** | `SL8541E_Config_Fix_v2.1.4_Universal.zip` | other SL8541E, no audio |
 
 - **Device axis**: the HSC builds handle fakery / telemetry / biometrics — those property
   names only exist on HSC firmware. Universal builds skip them and do only the
@@ -292,12 +292,15 @@ SL8541E_Config_Fix/
 ├── module.prop                     module metadata
 ├── system.prop                     boot-time property injection
 ├── post-fs-data.sh                 earliest boot: properties + ZRAM + charging 3A
+├── post-mount.sh                   ★ KSU only: verify whether system/ really mounted
 ├── service.sh                      post-boot: second pass + sysctl + DNS + settings
+├── boot-completed.sh               ★ KSU only: animation timing backstop
 ├── action.sh                       Action button: refresh status page + text report
 ├── customize.sh                    install entry (★ APatch never runs update-binary)
 ├── uninstall.sh                    uninstall: clears persist props + stops the guardian
 ├── lib/
-│   ├── common.sh                   shared library
+│   ├── common.sh                   shared library + root-manager detection
+│   ├── sysinject.sh                ★ put system/ files onto /system (no overlayfs here)
 │   ├── prop.list                   ★ property manifest (single source of truth)
 │   ├── install.sh                  ★ GitHub update check + install
 │   └── dns-guard.sh                GitHub dynamic DNS guardian
@@ -395,6 +398,39 @@ cleanup worked.
 | Not for | other vendors (property names won't match) |
 | Doesn't touch | screen density, Bluetooth version, signal strength, thermal, color |
 | Skipped | Google WebView, SurfaceFlinger color, CPU governor |
+
+### How each root manager mounts `system/`
+
+| Root manager | Mount mechanism |
+|---|---|
+| **Magisk** | built-in Magic Mount |
+| **APatch (recent)** | **built-in mounting removed — a metamodule is mandatory** |
+| **FolkPatch** | three modes: ① built-in Magic Mount ② metamodule ③ **no mounting by default** |
+| **KernelSU / SukiSU / KSU-Next** | metamodule |
+
+**Metamodules are not KernelSU-only** — recent APatch and FolkPatch both use the same
+mechanism (`metamodule=1` in `module.prop`, hook script `metamount.sh`).
+
+**But nearly all metamodules depend on overlayfs.** This kernel (4.4.83) has no overlayfs —
+`mount -t overlay` fails with `No such device` — so `meta-overlayfs` / `meta-rs` /
+`meta-hybrid` **cannot work here**, installed or not.
+
+#### What this module does instead
+
+It doesn't use metamodules. `lib/sysinject.sh` puts the files under `system/` there itself,
+in two tiers:
+
+| Tier | Method | Notes |
+|---|---|---|
+| **① direct write** (default) | `mount -o remount,rw /system` → write → restore `ro` | survives reboots. **Backs up before writing; restores on uninstall** |
+| ② directory mirror (opt-in) | tmpfs mirror + `bind` the whole directory | no overlayfs needed, but copies the entire directory and resets each boot |
+
+It only touches this module's own files — never deletes or modifies existing system files.
+Backups live in `.sysbak/`; `uninstall.sh` restores them from the manifest (files that
+didn't exist originally get removed).
+
+> Properties, TCP, charging and animation need **no mounting at all** — they work under any
+> root manager. Only the Wear OS libraries and hosts acceleration depend on `system/`.
 
 **Flashing it on another watch?** Bold, but the likely outcome is a module that installs
 and does nothing — or one that writes to a charging node that doesn't exist and fails silently.

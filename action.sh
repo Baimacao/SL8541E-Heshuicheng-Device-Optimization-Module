@@ -132,11 +132,52 @@ esac
 echo "【SL8541E 优化模块 · 体检报告】"
 echo "🐟 大肥鱼。逐项对一遍，标 ✗ 的就是没生效。"
 echo "──────────────────"
+# 根管理器 / 元模块：这两个结论以前散落在各脚本里，口径还不一致
+#   （$KSU 变量只有管理器自己注入，用户手敲 su -c 根本拿不到）。
+#   这里强制刷新一次缓存并统一输出，保证报告和状态页说的是同一件事。
+root_manager_detect --refresh
+_MM=$(metamodule_status)
+_MOUNT=$(module_mount_state)
+
+case "$_MM" in
+    active:*)       _MM_TXT="已装（${_MM#active:}）" ;;
+    none)           _MM_TXT="未装" ;;
+    not_applicable) _MM_TXT="不适用（该根管理器无此机制）" ;;
+    *)              _MM_TXT="无法确定" ;;
+esac
+
+# system/ 里的文件到底生效没 —— 这才是用户真正关心的那一项。
+#   本机内核没 overlayfs，元模块（meta-overlayfs 等）装了也用不了，
+#   所以真正的判据是"文件在不在 /system 上"，不是"有没有元模块"。
+if command -v sysinject_report >/dev/null 2>&1; then
+    case "$(sysinject_report)" in
+        rootmgr) _SYS_TXT="由根管理器挂载 ✓" ;;
+        ok)      _SYS_TXT="已就位 ✓" ;;
+        mirror)  _SYS_TXT="本次开机用目录镜像注入 ✓（重启需重做）" ;;
+        na)      _SYS_TXT="已跳过（模块被禁用/跳过挂载）" ;;
+        *)       _SYS_TXT="未生效 ✗" ;;
+    esac
+else
+    _SYS_TXT="检测库未加载"
+fi
+
 echo "模块身份（先确认刷的是哪个包）："
 echo "  版本：      v$(module_version) (code $(module_version_code))"
 echo "  包型：      ${VARIANT}$([ "$VARIANT" = "hsc" ] && echo '（和顺成特供）' || echo '（通用）')"
 echo "  属性清单：  $(prop_list_count) 条"
 echo "  上次巡检：  $(grep -c 'post-fs-data 开始' "$LOG" 2>/dev/null) 次开机记录"
+echo "──────────────────"
+echo "运行环境："
+echo "  根管理器：  $ROOT_NAME${ROOT_VER:+（$ROOT_VER）}"
+echo "  元模块：    $_MM_TXT"
+echo "  system/ 文件：$_SYS_TXT"
+case "$_SYS_TXT" in
+    *✗*)
+        echo "  → 这台机器内核没有 overlayfs，元模块用不了。"
+        echo "    本模块会尝试直接写入 /system；失败则说明 remount 被拦。"
+        echo "    查 fix.log 里的 [sysinject] 段，那里写清了卡在哪一步。"
+        ;;
+esac
 echo "──────────────────"
 echo "模块更新："
 echo "  $(module_version) → $UPD_LINE"
@@ -176,7 +217,9 @@ echo "  rmem_max：       $(cat /proc/sys/net/core/rmem_max 2>/dev/null)"
 echo "  wmem_max：       $(cat /proc/sys/net/core/wmem_max 2>/dev/null)"
 echo "  拥塞算法：       $(cat /proc/sys/net/ipv4/tcp_congestion_control 2>/dev/null)"
 echo "  rwnd 属性：      $(ok_fail net.tcp.default_init_rwnd 256)"
-echo "  hosts 挂载：     $([ -f /system/etc/hosts ] && echo '在 ✓' || echo '不在 ✗')"
+# ⚠ 不能用 [ -f /system/etc/hosts ] 判挂载：原厂 ROM 本来就有这个文件，
+#   它永远为真 —— 这就是"报告说已挂载、实际却被别的 hosts 覆盖"的老坑。
+echo "  hosts 挂载：     $(case "$(mount_proof system/etc/hosts)" in yes:*) echo '已挂载 ✓' ;; no:*) echo "未挂载 ✗ ($(mount_proof system/etc/hosts | cut -d: -f2-))" ;; esac)"
 echo "  github.com IP：  $(grep -E '^[0-9.]+[[:space:]]+github\.com' /system/etc/hosts 2>/dev/null | head -1 | tr -s ' ' | cut -d' ' -f1)"
 echo "  hosts 条目数：   $(grep -vc '^[[:space:]]*#\|^[[:space:]]*$' /system/etc/hosts 2>/dev/null)"
 if [ -f "$MODDIR/.dnsguard.pid" ] && [ -d "/proc/$(cat "$MODDIR/.dnsguard.pid" 2>/dev/null | tr -d ' \n')" ]; then

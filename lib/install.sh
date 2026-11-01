@@ -95,6 +95,15 @@ set_list_hint() {
     [ -n "$_base" ] || return 0
     _tmp="$MODDIR/module.prop.tmp"
     sed "s|^description=.*|description=$_hint$_base|" "$MODDIR/module.prop" > "$_tmp" 2>/dev/null
+    # ⚠ mv 之前必须验：sed 失败 / 磁盘满 / 原文件被锁 都会留下空文件或半截文件，
+    #   mv 上去等于**把 module.prop 清空** —— 根管理器随即看不到本模块，
+    #   updateJson 也一并丢失，表现为"模块从列表里消失了"。
+    #   这里要求：结果非空、且仍含 id= 与 versionCode=（说明不是被截断的半个文件）。
+    if [ ! -s "$_tmp" ] || ! grep -q '^id=' "$_tmp" 2>/dev/null        || ! grep -q '^versionCode=' "$_tmp" 2>/dev/null; then
+        rm -f "$_tmp" 2>/dev/null
+        fish_log "⚠ 改写 module.prop 失败（结果为空或缺关键字段），已放弃本次提示，原文件未动"
+        return 1
+    fi
     mv "$_tmp" "$MODDIR/module.prop" 2>/dev/null
 }
 

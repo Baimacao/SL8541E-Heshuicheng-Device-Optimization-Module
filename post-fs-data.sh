@@ -17,6 +17,11 @@ MODDIR="${MODDIR:-${0%/*}}"
 # shellcheck source=lib/common.sh
 . "$MODDIR/lib/common.sh"
 
+# shellcheck source=lib/sysinject.sh
+# 本机内核没有 overlayfs，元模块（meta-overlayfs 等）全部无效，
+# 所以 system/ 里的文件得靠这个库自己搞进去。见 lib/sysinject.sh 头部说明。
+[ -f "$MODDIR/lib/sysinject.sh" ] && . "$MODDIR/lib/sysinject.sh"
+
 # 启动指纹：不带这一行就无法判断"这一轮到底跑没跑"。
 # 起因：体检报告显示充电还是原厂值，但离线模拟里写入是成功的 ——
 # 到底是脚本没跑、写失败、还是写了被系统改回去，全靠这行 + charge_boost 的明细来分。
@@ -86,6 +91,17 @@ else
     fish_log "V4A：⚠ 没有 magiskpolicy / apd，跳过 SELinux 放行（V4A 可能不生效）"
 fi
 # ── V4A-END ──
+
+# ── 5. system/ 注入（Wear OS 库 / hosts）──
+#   放在最后是有意的：属性、充电、ZRAM 都已完成，这些才是"必须在最早阶段"的事。
+#   注入慢一点没关系（本机实测镜像 /system/framework 只要几秒），
+#   但绝不能因为注入失败影响前面那些真正抢时间的写入 ——
+#   所以这里**不看返回值**，只记日志。
+if command -v sysinject_apply >/dev/null 2>&1; then
+    sysinject_apply
+else
+    fish_log "[sysinject] 库未加载，跳过 system/ 注入"
+fi
 
 fish_log "══ post-fs-data 结束 ══"
 fish_log "🐟 虚标段处理完毕。"
