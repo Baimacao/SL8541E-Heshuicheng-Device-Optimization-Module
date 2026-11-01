@@ -63,10 +63,10 @@ so nobody installs it expecting the wrong thing:
 
 | # | Package | Filename | For |
 |---|---|---|---|
-| ① | **HSC · with audio** | `SL8541E_Config_Fix_v2.1.4_HSC_Audio.zip` | HSC watch + wants V4A |
-| ② | **HSC · no audio** | `SL8541E_Config_Fix_v2.1.4_HSC.zip` | HSC watch, no audio |
-| ③ | **Universal · with audio** | `SL8541E_Config_Fix_v2.1.4_Universal_Audio.zip` | other SL8541E + wants V4A |
-| ④ | **Universal · no audio** | `SL8541E_Config_Fix_v2.1.4_Universal.zip` | other SL8541E, no audio |
+| ① | **HSC · with audio** | `SL8541E_Config_Fix_v2.1.5_HSC_Audio.zip` | HSC watch + wants V4A |
+| ② | **HSC · no audio** | `SL8541E_Config_Fix_v2.1.5_HSC.zip` | HSC watch, no audio |
+| ③ | **Universal · with audio** | `SL8541E_Config_Fix_v2.1.5_Universal_Audio.zip` | other SL8541E + wants V4A |
+| ④ | **Universal · no audio** | `SL8541E_Config_Fix_v2.1.5_Universal.zip` | other SL8541E, no audio |
 
 - **Device axis**: the HSC builds handle fakery / telemetry / biometrics — those property
   names only exist on HSC firmware. Universal builds skip them and do only the

@@ -327,9 +327,21 @@ mount_proof() {
     [ -f "$_src" ] || { echo "no:模块内无此文件"; return; }
     [ -e "$_dst" ] || { echo "no:目标不存在"; return; }
 
-    # 证据 1：挂载表里有没有本模块
-    if grep -q "SL8541E_Config_Fix" /proc/mounts 2>/dev/null; then
-        echo "yes:挂载表"
+    # 证据 1：**这个路径本身**是否被某个挂载点覆盖
+    #   ⚠ 原来只 grep "SL8541E_Config_Fix" 出现在 /proc/mounts 里就判"已挂载"。
+    #     粒度太粗：只要本模块**任意一个**目录挂上了，所有文件都会被判成已挂载。
+    #     装了 meta-bindmount 之后更糟 —— 它的挂载源是
+    #     /data/adb/meta-bindmount/SL8541E_Config_Fix/<分区>，路径里天然带 id，
+    #     于是 framework 挂上就等于"每个文件都挂上了"。
+    #   改成：找 /proc/mounts 里的挂载点，看它是不是 $_dst 的路径前缀。
+    _hit_mount=""
+    while IFS=' ' read -r _mdev _mtgt _mrest; do
+        case "$_mtgt" in
+            "$_dst"|"$_dst"/*) _hit_mount="$_mtgt"; break ;;
+        esac
+    done < /proc/mounts
+    if [ -n "$_hit_mount" ]; then
+        echo "yes:挂载点 $_hit_mount"
         return
     fi
 

@@ -161,7 +161,8 @@ esac
 # system/ 文件状态：用户真正关心的那一项
 #   本机内核无 overlayfs，元模块用不了，所以判据是"文件在不在 /system 上"。
 case "$(kv SYSINJ)" in
-    rootmgr) rowv "system/ 文件" "根管理器已挂载" ;;
+    rootmgr)    rowv "system/ 文件" "根管理器已挂载" ;;
+    metamodule) rowv "system/ 文件" "元模块已挂载" ;;
     ok)      rowv "system/ 文件" "已就位" ;;
     mirror)  rowv "system/ 文件" "目录镜像注入（重启需重做）" ;;
     na)      rowv "system/ 文件" "已跳过" ;;

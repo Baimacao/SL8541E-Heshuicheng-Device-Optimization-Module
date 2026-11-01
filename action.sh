@@ -151,11 +151,12 @@ esac
 #   所以真正的判据是"文件在不在 /system 上"，不是"有没有元模块"。
 if command -v sysinject_report >/dev/null 2>&1; then
     case "$(sysinject_report)" in
-        rootmgr) _SYS_TXT="由根管理器挂载 ✓" ;;
-        ok)      _SYS_TXT="已就位 ✓" ;;
-        mirror)  _SYS_TXT="本次开机用目录镜像注入 ✓（重启需重做）" ;;
-        na)      _SYS_TXT="已跳过（模块被禁用/跳过挂载）" ;;
-        *)       _SYS_TXT="未生效 ✗" ;;
+        rootmgr)    _SYS_TXT="由根管理器挂载 ✓" ;;
+        metamodule) _SYS_TXT="由元模块挂载 ✓" ;;
+        ok)         _SYS_TXT="已就位 ✓" ;;
+        mirror)     _SYS_TXT="本次开机用目录镜像注入 ✓（重启需重做）" ;;
+        na)         _SYS_TXT="已跳过（模块被禁用/跳过挂载）" ;;
+        *)          _SYS_TXT="未生效 ✗" ;;
     esac
 else
     _SYS_TXT="检测库未加载"

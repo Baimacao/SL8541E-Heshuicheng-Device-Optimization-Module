@@ -120,6 +120,15 @@ sysinject_direct() {
             # 写回后立刻验证，不信 cp 的返回值
             if si_same "$MODDIR/$_rel" "$_dst"; then
                 _ok=$((_ok+1))
+                # 记下我们写进去的指纹 —— 下次升级后靠它认出"这是我们写的"
+                _newsha=$(sha256sum "$_dst" 2>/dev/null | cut -d' ' -f1)
+                if [ -n "$_newsha" ]; then
+                    mkdir -p "$SYSINJ_BAK" 2>/dev/null
+                    # 同路径只留最新一条，避免文件无限增长
+                    grep -v "^$_rel " "$SYSINJ_FINGERPRINT" > "$SYSINJ_FINGERPRINT.tmp" 2>/dev/null
+                    mv "$SYSINJ_FINGERPRINT.tmp" "$SYSINJ_FINGERPRINT" 2>/dev/null
+                    echo "$_rel $_newsha" >> "$SYSINJ_FINGERPRINT"
+                fi
             else
                 _si_log "① $_rel 写入后内容不一致"
                 _bad=$((_bad+1))
@@ -237,6 +246,20 @@ sysinject_apply() {
         skipped|disabled) _si_log "模块被 skip_mount/disable 标记，跳过"; return 0 ;;
     esac
 
+    # ★ 装了元模块就必须让位 —— 这是**时序**问题，不是偏好问题：
+    #   KSU/APatch/FolkPatch 的启动顺序是
+    #     ④ 常规模块 post-fs-data.sh  ← 本函数在这里跑
+    #     ⑥ 元模块 metamount.sh       ← bind 挂载在这之后
+    #   所以此刻 /system 还是原样，si_pending 必然非空，我们会直写进去；
+    #   紧接着 metamount.sh 又把整个目录 bind 上去，**直写的成果被盖住**。
+    #   更糟的是直写时建的 .sysbak 备份，会在元模块生效后变成"错误的原厂"。
+    #   所以：只要检测到有元模块在，就完全交给它，我们一个字都不写。
+    if [ -e /data/adb/metamodule ] || [ -d /data/adb/meta-bindmount ]; then
+        _mm=$(basename "$(readlink -f /data/adb/metamodule 2>/dev/null)" 2>/dev/null)
+        _si_log "检测到元模块（${_mm:-已存在}），挂载交由它处理，本模块不写入 /system"
+        return 0
+    fi
+
     if [ -z "$(si_pending)" ]; then
         _si_log "所有 system/ 文件均已就位"
         return 0
@@ -269,6 +292,10 @@ sysinject_report() {
         mounted)          echo "rootmgr" ; return 0 ;;
         skipped|disabled) echo "na" ; return 0 ;;
     esac
+    # 元模块接管时，结论是"交给它了"，不是失败
+    if [ -e /data/adb/metamodule ] || [ -d /data/adb/meta-bindmount ]; then
+        echo "metamodule"; return 0
+    fi
     [ -z "$(si_pending)" ] && { echo "ok"; return 0; }
     # 有未就位的：说明这次开机是直写还是镜像（看 /proc/mounts 有没有我们的镜像）
     if grep -q "$SYSINJ_ROOT" /proc/mounts 2>/dev/null; then
@@ -282,6 +309,17 @@ sysinject_cleanup() {
     # tmpfs 挂载重启自动消失；这里只清可能残留的空目录
     umount "$SYSINJ_ROOT"/*/* 2>/dev/null
     rm -rf "$SYSINJ_ROOT" 2>/dev/null
+    # 备份目录在 /data/adb 下，**不随模块目录删除**，必须显式清
+    #   但只在"还原创完"之后才清 —— 由 uninstall.sh 控制调用时机。
+}
+
+# sysinject_backup_info → 给用户看的一行：备份了多少份、占多少空间
+sysinject_backup_info() {
+    [ -d "$SYSINJ_BAK" ] || { echo "无备份"; return 0; }
+    _n=$(wc -l < "$SYSINJ_MANIFEST" 2>/dev/null | tr -d ' ')
+    _k=$(du -sk "$SYSINJ_BAK" 2>/dev/null | cut -f1)
+    case "$_k" in ''|*[!0-9]*) _k=0 ;; esac
+    echo "${_n:-0} 项 / $((_k / 1024))MB @ $SYSINJ_BAK"
 }
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -297,8 +335,19 @@ sysinject_cleanup() {
 #    原状态 = absent → 系统原本没有，卸载时直接删掉我们放进去的
 # ═══════════════════════════════════════════════════════════════════════════
 
-SYSINJ_BAK="$MODDIR/.sysbak"
+#   ⚠ 备份**不能**放模块目录里（v2.1.4 犯过这个错）：
+#     模块更新会整目录替换，$MODDIR/.sysbak 跟着消失；
+#     而那时系统里已经是"上一版模块写的文件"，
+#     再次备份就会把它当成原厂内容备下来 ——
+#     卸载还原时还原来还原去，还原的是我们自己的旧版本。
+#     放在 /data 下独立位置，模块怎么更新都不动它。
+SYSINJ_BAK="${SYSINJ_BAK:-/data/adb/sl8541e-sysbak}"
 SYSINJ_MANIFEST="$SYSINJ_BAK/manifest"
+
+# 我们自己写进去的文件的 sha256 指纹（跨模块版本持久，放在备份目录里）。
+# 用途：升级后系统里那份是**上一版模块写的**，若只看"当前模块内容 vs 系统内容"
+# 会判为不同、进而把自家产物当原厂备份。有这份指纹就能认出"这是我们写过的"。
+SYSINJ_FINGERPRINT="$SYSINJ_BAK/written.sha256"
 
 # si_backup <相对路径> —— 写之前调用；幂等（已备过就不重复备）
 si_backup() {
@@ -309,12 +358,40 @@ si_backup() {
         return 0
     fi
     if [ -e "/$_rel" ]; then
-        mkdir -p "$SYSINJ_BAK/$(si_dir_of "$_rel")" 2>/dev/null
-        if cp -a "/$_rel" "$SYSINJ_BAK/$_rel" 2>/dev/null; then
-            echo "$_rel|exist" >> "$SYSINJ_MANIFEST"
+        # ★ 关键防呆：如果系统里这份文件和模块里的**内容一致**，
+        #   说明它多半是上一版模块自己写进去的，不是原厂内容。
+        #   这种情况绝不能当"原厂"备份 —— 否则卸载会还原成我们的旧版本。
+        #   记为 exist-own，卸载时按"删掉"处理（因为究其本源是我们加的）。
+        # 判断依据有两条，任一成立就认定"这是我们自己写的"：
+        #   a) 内容与当前模块一致（同一版本重启）
+        #   b) 内容命中历史指纹（跨版本升级后，系统里留着上一版的产物）
+        _is_own=0
+        si_same "$MODDIR/$_rel" "/$_rel" && _is_own=1
+        if [ "$_is_own" = "0" ] && [ -f "$SYSINJ_FINGERPRINT" ]; then
+            _cur_sha=$(sha256sum "/$_rel" 2>/dev/null | cut -d' ' -f1)
+            if [ -n "$_cur_sha" ] && grep -q "^$_rel $_cur_sha" "$SYSINJ_FINGERPRINT" 2>/dev/null; then
+                _is_own=1
+                _si_log "备份 $_rel：命中历史指纹，判定为本模块早前写入的版本（记 own）"
+            fi
+        fi
+
+        if [ "$_is_own" = "1" ]; then
+            mkdir -p "$SYSINJ_BAK/$(si_dir_of "$_rel")" 2>/dev/null
+            if cp -a "/$_rel" "$SYSINJ_BAK/$_rel" 2>/dev/null; then
+                echo "$_rel|own" >> "$SYSINJ_MANIFEST"
+                _si_log "备份 $_rel：内容与模块相同，判定为本模块此前的产物（记 own）"
+            else
+                _si_log "⚠ 备份失败：/$_rel —— 为安全起见不写这一项"
+                return 1
+            fi
         else
-            _si_log "⚠ 备份失败：/$_rel —— 为安全起见不写这一项"
-            return 1
+            mkdir -p "$SYSINJ_BAK/$(si_dir_of "$_rel")" 2>/dev/null
+            if cp -a "/$_rel" "$SYSINJ_BAK/$_rel" 2>/dev/null; then
+                echo "$_rel|exist" >> "$SYSINJ_MANIFEST"
+            else
+                _si_log "⚠ 备份失败：/$_rel —— 为安全起见不写这一项"
+                return 1
+            fi
         fi
     else
         echo "$_rel|absent" >> "$SYSINJ_MANIFEST"
@@ -339,11 +416,23 @@ si_restore_all() {
         [ -n "$_rel" ] || continue
         case "$_state" in
             exist)
+                # 原厂有、且内容是真的原厂 → 写回
                 if cp -a "$SYSINJ_BAK/$_rel" "/$_rel" 2>/dev/null; then
                     _restored=$((_restored+1))
                 else
                     _failed=$((_failed+1))
                 fi
+                ;;
+            own)
+                # 备份时判明"系统里那份其实是本模块此前写的"
+                #   → 究其本源是我们加进去的，删掉才是回到更早的状态。
+                #   留一份在 .own 后缀里，万一判断有误还能捞回来。
+                if [ -e "/$_rel" ]; then
+                    cp -a "/$_rel" "$SYSINJ_BAK/$_rel.own-removed" 2>/dev/null
+                    rm -f "/$_rel" 2>/dev/null && _removed=$((_removed+1)) || _failed=$((_failed+1))
+                fi
+                _parent=$(si_dir_of "$_rel")
+                [ -n "$_parent" ] && rmdir "/$_parent" 2>/dev/null
                 ;;
             absent)
                 # 原本没有 → 删掉我们放进去的；空目录一并清掉

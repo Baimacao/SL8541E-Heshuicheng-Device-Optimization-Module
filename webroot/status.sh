@@ -38,6 +38,13 @@ case "$_MM" in
     not_applicable) out "METAMODULE" "na" ;;
     *)         out "METAMODULE" "unknown" ;;
 esac
+# 单独标出"是不是我们自己的 meta-bindmount"——用户排查时这个信息有用
+if [ -e /data/adb/metamodule ]; then
+    _curid=$(basename "$(readlink -f /data/adb/metamodule 2>/dev/null)" 2>/dev/null)
+    out "METAMODULE_ID" "$_curid"
+else
+    out "METAMODULE_ID" ""
+fi
 out "SYS_MOUNT" "$(module_mount_state)"
 
 # system/ 里的文件到底生效没 —— 这才是关键判据。

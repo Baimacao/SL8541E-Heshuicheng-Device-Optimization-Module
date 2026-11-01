@@ -53,9 +53,9 @@
             })(btns[i]);
         }
 
-        // 版本号用 v2.1.4 占位，构建脚本替换成实际版本（别再写死，写死就容易忘改）
+        // 版本号用 v2.1.5 占位，构建脚本替换成实际版本（别再写死，写死就容易忘改）
         var ver = document.getElementById('version');
-        if (ver) { ver.textContent = 'v2.1.4'; }
+        if (ver) { ver.textContent = 'v2.1.5'; }
     }
 
     if (document.readyState === 'loading') {

@@ -72,10 +72,10 @@ persist.sys.cpu=10    # 四核标十核
 
 | # | 包 | 文件名 | 适合 |
 |---|---|---|---|
-| ① | **HSC 特供 · 有音效** | `SL8541E_Config_Fix_v2.1.4_HSC_Audio.zip` | 和顺成方案手表 + 想要 V4A 音效 |
-| ② | **HSC 特供 · 无音效** | `SL8541E_Config_Fix_v2.1.4_HSC.zip` | 和顺成方案手表，不要音效 |
-| ③ | **通用 · 有音效** | `SL8541E_Config_Fix_v2.1.4_Universal_Audio.zip` | 其他 SL8541E 设备 + 想要 V4A 音效 |
-| ④ | **通用 · 无音效** | `SL8541E_Config_Fix_v2.1.4_Universal.zip` | 其他 SL8541E 设备，不要音效 |
+| ① | **HSC 特供 · 有音效** | `SL8541E_Config_Fix_v2.1.5_HSC_Audio.zip` | 和顺成方案手表 + 想要 V4A 音效 |
+| ② | **HSC 特供 · 无音效** | `SL8541E_Config_Fix_v2.1.5_HSC.zip` | 和顺成方案手表，不要音效 |
+| ③ | **通用 · 有音效** | `SL8541E_Config_Fix_v2.1.5_Universal_Audio.zip` | 其他 SL8541E 设备 + 想要 V4A 音效 |
+| ④ | **通用 · 无音效** | `SL8541E_Config_Fix_v2.1.5_Universal.zip` | 其他 SL8541E 设备，不要音效 |
 
 - **机型维度**：HSC 特供会处理虚标 / 云控 / 指纹人脸（这些属性名只有和顺成方案才有）；
   通用包不碰这些，只做与机型无关的部分。
