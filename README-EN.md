@@ -63,10 +63,10 @@ so nobody installs it expecting the wrong thing:
 
 | # | Package | Filename | For |
 |---|---|---|---|
-| ① | **HSC · with audio** | `SL8541E_Config_Fix_v2.1.5_HSC_Audio.zip` | HSC watch + wants V4A |
-| ② | **HSC · no audio** | `SL8541E_Config_Fix_v2.1.5_HSC.zip` | HSC watch, no audio |
-| ③ | **Universal · with audio** | `SL8541E_Config_Fix_v2.1.5_Universal_Audio.zip` | other SL8541E + wants V4A |
-| ④ | **Universal · no audio** | `SL8541E_Config_Fix_v2.1.5_Universal.zip` | other SL8541E, no audio |
+| ① | **HSC · with audio** | `SL8541E_Config_Fix_{{VER}}_HSC_Audio.zip` | HSC watch + wants V4A |
+| ② | **HSC · no audio** | `SL8541E_Config_Fix_{{VER}}_HSC.zip` | HSC watch, no audio |
+| ③ | **Universal · with audio** | `SL8541E_Config_Fix_{{VER}}_Universal_Audio.zip` | other SL8541E + wants V4A |
+| ④ | **Universal · no audio** | `SL8541E_Config_Fix_{{VER}}_Universal.zip` | other SL8541E, no audio |
 
 - **Device axis**: the HSC builds handle fakery / telemetry / biometrics — those property
   names only exist on HSC firmware. Universal builds skip them and do only the
@@ -233,7 +233,9 @@ su -c 'sh /data/adb/modules/SL8541E_Config_Fix/lib/install.sh install'
   `apd module install` → **APatch directory-level fallback**.
   - APatch has **no public module-install CLI** today, hence tier four: unpack to a temp dir,
     verify the packaged `id` matches our own, then copy item-by-item into
-    `/data/adb/modules/<id>`, backing up the previous version to `.bak` first.
+    `/data/adb/modules/<id>`, backing the previous version up to `$MODDIR/.apatch-prev`
+    (**not** `<id>.bak` — that path gets scanned by the root manager as a second module with
+    the same id, which in practice showed up as "V4A / Wear OS libs come and go after update").
   - Runtime artifacts (`fix.log` / `update.zip` / `update.state` / `.dnsguard.pid`) are
     **never overwritten** — otherwise the log and state get wiped.
   - A package whose `id` doesn't match is **rejected** (prevents another module hijacking ours).
@@ -311,9 +313,16 @@ SL8541E_Config_Fix/
 │   ├── status.sh                   ★ status values (single source of truth, KEY|VALUE)
 │   └── gen_status.sh               renders status_generated.html
 ├── system/                         hosts, Wear OS permission XML, Wear OS jars
-├── vendor/overlay/                 (optional) power_profile RRO
 └── META-INF/com/google/android/    Magisk compatibility shim
 ```
+
+> **v2.1.5 removed the `vendor/overlay/` RRO.** That 119 KB
+> `framework-res__auto_generated_rro.apk` (power_profile fix) used to ship in the
+> package, but `si_pending()` in `lib/sysinject.sh` only scans `system/`, and
+> nothing in the module ever verified it — so **it never took effect**. Shipping
+> something that does not work is worse than not shipping it: users assumed
+> battery stats were fixed. Restoring vendor support would need a separate
+> rollback path (a bad vendor write can brick the device at the bootloader).
 
 ### How to change a property
 
@@ -426,8 +435,11 @@ in two tiers:
 | ② directory mirror (opt-in) | tmpfs mirror + `bind` the whole directory | no overlayfs needed, but copies the entire directory and resets each boot |
 
 It only touches this module's own files — never deletes or modifies existing system files.
-Backups live in `.sysbak/`; `uninstall.sh` restores them from the manifest (files that
-didn't exist originally get removed).
+Backups live in `/data/adb/sl8541e-sysbak/` (**not** inside the module dir: a module update
+replaces that dir wholesale, so the backup would vanish and we'd end up archiving our own old
+output as if it were stock). `uninstall.sh` reads the `manifest` there and restores from it
+(files that didn't exist originally get removed). The backup is deleted **only when the
+restore reports zero failures** — otherwise it stays, so stock files are never lost.
 
 > Properties, TCP, charging and animation need **no mounting at all** — they work under any
 > root manager. Only the Wear OS libraries and hosts acceleration depend on `system/`.

@@ -73,7 +73,8 @@ check_file "system/framework/com.google.android.wearable.jar"        "Wear 核�
 check_file "system/etc/hosts" "GitHub 加速 hosts"
 
 # 可选件
-check_optional "vendor/overlay/framework-res__auto_generated_rro.apk" "RRO 覆盖（power_profile）"
+# ⚠ v2.1.5 起不再检查 vendor/overlay 那个 RRO：它从来没被注入过（si_pending 只扫
+#   system/），留着等于告诉用户"有这个功能"而实际没有。已从包里移除。
 
 if [ -n "$MISSING" ]; then
     ui_print ""
@@ -161,11 +162,6 @@ fi
 if [ -d "$MODPATH/system" ]; then
     set_perm_recursive "$MODPATH/system" 0 0 0755 0644
     say "  + system/    Wear OS 库"
-fi
-
-if [ -d "$MODPATH/vendor" ]; then
-    set_perm_recursive "$MODPATH/vendor" 0 0 0755 0644
-    say "  + vendor/    RRO（power_profile 修正）"
 fi
 
 if [ -f "$MODPATH/system/etc/hosts" ] && grep -q "github.com" "$MODPATH/system/etc/hosts" 2>/dev/null; then

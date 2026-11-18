@@ -173,13 +173,49 @@ if [ "$MARK" != "$REMOTE_VER" ]; then
     exit 0
 fi
 
-# ── 下载 ──
-ZIPNAME="SL8541E_Config_Fix_${REMOTE}.zip"
+# ── 下载 ──────────────────────────────────────────────────────────────────
+#  ⚠ v2.1.5 修正：这里原来是
+#      ZIPNAME="SL8541E_Config_Fix_${REMOTE}.zip"
+#    拼出来的地址**必然 404** —— 四个包里没有一个叫这个名。
+#    实测 v2.1.4：.../SL8541E_Config_Fix_v2.1.4.zip → HTTP 404
+#                .../SL8541E_Config_Fix_v2.1.4_HSC_Audio.zip → HTTP 302
+#    也就是说 check 能报"有新版本"（走 302 拿 tag，那条是对的），
+#    一点安装就死在 download_failed，这条路从来没通过。
+#
+#    四个包是本模块的"机型 × 音效"二维组合，靠两个已存在的事实推出来：
+#      · 机型维度 → lib/variant（hsc / uni），common.sh 已解析成 $VARIANT
+#      · 音效维度 → 包内有没有 V4A 三件套（无音效包构建时会被摘掉）
+#    推不出来就不猜，明确告诉用户去管理器更新（update-*.json 四个通道是好的）。
+pkg_zip_name() {
+    _ver="$1"
+    case "$VARIANT" in
+        hsc) _dim="HSC" ;;
+        uni) _dim="Universal" ;;
+        *)   return 1 ;;
+    esac
+    if [ -f "$MODDIR/system/priv-app/ViPER4Android/ViPER4Android.apk" ]; then
+        _snd="_Audio"
+    else
+        _snd=""
+    fi
+    printf 'SL8541E_Config_Fix_%s_%s%s.zip' "$_ver" "$_dim" "$_snd"
+}
+
+ZIPNAME=$(pkg_zip_name "$REMOTE")
+if [ -z "$ZIPNAME" ]; then
+    fish_log "⚠ 认不出本包的机型维度（lib/variant=[$VARIANT]），无法拼出下载文件名"
+    fish_log "  请用根管理器的「更新」按钮（它读 updateJson，四个通道都指向正确资产）"
+    write_state "newer" "$REMOTE_VER" "无法确定本包文件名，请用管理器更新"
+    set_list_hint "[有新版本 v$REMOTE_VER，请用管理器更新] "
+    echo "RESULT=manual_needed"
+    echo "REMOTE=$REMOTE_VER"
+    exit 0
+fi
 URL="https://github.com/$OWNER/$REPO/releases/download/$REMOTE/$ZIPNAME"
 fish_log "开始下载 $URL"
 rm -f "$DL" 2>/dev/null
 if ! http_get "$URL" "$DL"; then
-    fish_log "⚠ 下载失败（网络/被墙/IP 池失效）"
+    fish_log "⚠ 下载失败（网络/被墙/IP 池失效，或该版本没有 $ZIPNAME）"
     write_state "newer" "$REMOTE_VER" "下载失败"
     echo "RESULT=download_failed"
     exit 1

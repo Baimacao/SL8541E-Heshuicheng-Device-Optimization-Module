@@ -2,8 +2,12 @@
 # ═══════════════════════════════════════════════════════════════════════════
 #  boot-completed.sh —— 系统完全启动完毕（收到 BOOT_COMPLETED 之后）
 #  ---------------------------------------------------------------------------
-#  这个钩子是 **KernelSU 专有**的。在 Magisk / APatch / FolkPatch 上
-#  它不会被调用 —— 所以这里不能放"必须执行"的逻辑，只能做"KSU 上做得更好"的事。
+#  谁有这个阶段（v2.1.5 更正；原来这里写"KernelSU 专有"，是错的）：
+#    · Magisk    → 没有，本文件不会被调用
+#    · KernelSU 系 → 有
+#    · APatch    → 有
+#    · FolkPatch → 有（apd/src/event.rs 的 on_boot_completed 里
+#                  run_stage("boot-completed")）
 #
 #  存在的意义只有一个：**给动画缩放一个比 service.sh 更准的时机参照点。**
 #    service.sh 挂在 late_start，那时 system_server 可能还在初始化设置项，
@@ -25,6 +29,13 @@ MODDIR="${MODDIR:-${0%/*}}"
 # shellcheck source=lib/common.sh
 . "$MODDIR/lib/common.sh"
 
+# ⚠ 必须先 detect 再打日志（v2.1.5 修正）：
+#   common.sh 加载时 ROOT_NAME 只是空串，真正识别靠 root_manager_detect。
+#   原来这里直接 fish_log "$ROOT_NAME"，那行日志永远是空的 —— 而它的唯一用途
+#   就是让人一眼看出"这台是谁在管"。空着等于白打，还让人以为识别失败。
+#   下面 $(metamodule_status) 里虽然也会 detect，但那是**子 shell**，
+#   填好的变量回不到本进程，所以必须在这里显式调一次。
+root_manager_detect
 fish_log "══ boot-completed 开始（$ROOT_NAME）══"
 
 # ── 动画兜底：只检查、不到位才补，绝不无条件重写 ──────────────────────────

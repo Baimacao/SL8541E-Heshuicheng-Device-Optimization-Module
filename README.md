@@ -1,11 +1,5 @@
 # SL8541E 和顺成方案设备优化模块
 
-> **本包：HSC特供·有音效**（`hsc` + audio）
->
-> 同一个 Release 里有四个包：**HSC 特供 / 通用** × **有音效 / 无音效**。
-> 另一个机型维度是「通用包（不处理虚标/云控/指纹人脸）」；另一个音效维度是「无音效」。
-> **四个包不能同时安装**（模块 ID 相同）。
-
 [English](README-EN.md) | 中文
 
 由 [B站白马曹](https://space.bilibili.com/1329200878) 与 DeepSeek 共同制作。
@@ -72,10 +66,10 @@ persist.sys.cpu=10    # 四核标十核
 
 | # | 包 | 文件名 | 适合 |
 |---|---|---|---|
-| ① | **HSC 特供 · 有音效** | `SL8541E_Config_Fix_v2.1.5_HSC_Audio.zip` | 和顺成方案手表 + 想要 V4A 音效 |
-| ② | **HSC 特供 · 无音效** | `SL8541E_Config_Fix_v2.1.5_HSC.zip` | 和顺成方案手表，不要音效 |
-| ③ | **通用 · 有音效** | `SL8541E_Config_Fix_v2.1.5_Universal_Audio.zip` | 其他 SL8541E 设备 + 想要 V4A 音效 |
-| ④ | **通用 · 无音效** | `SL8541E_Config_Fix_v2.1.5_Universal.zip` | 其他 SL8541E 设备，不要音效 |
+| ① | **HSC 特供 · 有音效** | `SL8541E_Config_Fix_{{VER}}_HSC_Audio.zip` | 和顺成方案手表 + 想要 V4A 音效 |
+| ② | **HSC 特供 · 无音效** | `SL8541E_Config_Fix_{{VER}}_HSC.zip` | 和顺成方案手表，不要音效 |
+| ③ | **通用 · 有音效** | `SL8541E_Config_Fix_{{VER}}_Universal_Audio.zip` | 其他 SL8541E 设备 + 想要 V4A 音效 |
+| ④ | **通用 · 无音效** | `SL8541E_Config_Fix_{{VER}}_Universal.zip` | 其他 SL8541E 设备，不要音效 |
 
 - **机型维度**：HSC 特供会处理虚标 / 云控 / 指纹人脸（这些属性名只有和顺成方案才有）；
   通用包不碰这些，只做与机型无关的部分。
@@ -231,7 +225,9 @@ su -c 'sh /data/adb/modules/SL8541E_Config_Fix/lib/install.sh install'
 - **安装分四级**：`magisk --install-module` → `ksud module install` → `apd module install`
   → **APatch 目录级兜底**。前三个 CLI 谁在谁优先。
   - APatch 到目前**没有公开的模块安装 CLI**，所以走到第四级：解包到临时目录，
-    比对包内 `id` 与自身一致后，逐项覆盖进 `/data/adb/modules/<id>`，旧版先备份成 `.bak`。
+    比对包内 `id` 与自身一致后，逐项覆盖进 `/data/adb/modules/<id>`，旧版先备份到
+    `$MODDIR/.apatch-prev`（**不是** `/data/adb/modules/<id>.bak` —— 那个位置会被
+    根管理器当成第二个同 id 模块扫进去，实测表现为"更新后 V4A / Wear OS 库时有时无"）。
   - 覆盖时**只换模块文件，不动运行时产物**（`fix.log` / `update.zip` / `update.state` /
     `.dnsguard.pid` 等一律跳过），免得把日志和状态清掉。
   - 包内 `id` 与自身不一致 → **拒绝覆盖**（防止被别的模块顶掉）。
@@ -317,10 +313,15 @@ SL8541E_Config_Fix/
 │   ├── etc/hosts                   GitHub 加速
 │   ├── etc/permissions/com.google.android.wearable.xml
 │   └── framework/com.google.android.wearable.jar
-├── vendor/overlay/
-│   └── framework-res__auto_generated_rro.apk    （可选）power_profile 修正
 └── META-INF/com/google/android/    Magisk 兼容壳（APatch 走 customize.sh）
 ```
+
+> **v2.1.5 已移除 `vendor/overlay/` 的 RRO。** 那个 119 KB 的
+> `framework-res__auto_generated_rro.apk`（power_profile 修正）以前一直打进包，
+> 但 `lib/sysinject.sh` 的 `si_pending()` 只扫 `system/`，全模块也没有任何一处
+> 验证过它 —— 也就是说**它从来没生效过**。留一个"装着但不起作用"的东西比不留更糟：
+> 用户以为电量统计被修了，实际没有。真要恢复 vendor 支持得单独设计回滚路径
+> （vendor 写坏掉 bootloader），不值当。
 
 ### 改属性的正确姿势
 
@@ -443,7 +444,10 @@ A：根管理器删模块 + 重启。内置 `uninstall.sh` 会清掉 persist 覆
 | ② 目录镜像（需手动开启） | tmpfs 镜像目录 + `bind` 整目录 | 不依赖 overlayfs，但要复制整个目录、重启失效 |
 
 只对**本模块自己的文件**动手，不删不改系统原有文件。备份在
-`.sysbak/`，`uninstall.sh` 会按清单还原（原本没有的就删掉）。
+`/data/adb/sl8541e-sysbak/`（**不在模块目录里** —— 模块更新会整目录替换，
+放里面的话备份会跟着消失，然后把我们自己的旧版本误当成原厂内容备下来）。
+`uninstall.sh` 会读该目录的 `manifest` 按清单还原（原本没有的就删掉），
+并且**只在"失败 0 个"时才清备份**；还原失败时备份留着，原厂文件不会丢。
 
 > 属性、TCP、充电、动画这些**根本不需要挂载**，任何根管理器下都正常。
 > 依赖 `system/` 的只有：Wear OS 库、hosts 加速。

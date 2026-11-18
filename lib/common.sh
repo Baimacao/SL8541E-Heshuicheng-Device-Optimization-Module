@@ -280,14 +280,40 @@ prop_each() {
         _f5=$(printf '%s' "$_f5" | tr -d ' \t\r')
         _f6=$(printf '%s' "$_f6" | tr -d ' \t\r')
 
-        # 列数判断：5 列 = 带 variant；4 列 = 老格式，variant 视为 all
-        if [ -n "$_f6" ] || [ -z "$_f3" ]; then
+        # ── 列数判断：**严格 5 列**（v2.1.5 修正）──
+        #
+        # ⚠ 原来这里做"4 列兼容"：
+        #       elif [ -n "$_f5" ]; then _var="$_f3"; _val="$_f4"
+        #       else _var="all"; _val="$_f3"          # 4 列分支
+        #   问题是 **4 列和"5 列但备注留空"在 IFS 读完以后完全同形**：
+        #       4 列:      core|key|value|note|      → _f3=value _f4=note  _f5=空
+        #       5 列空备注: core|key|hsc|value|      → _f3=hsc   _f4=value _f5=空
+        #   两者都落到 _f5 空的分支，后者会把 **variant 当成属性值**写进去。
+        #   实测：core|test.五列空备注|hsc|bad|  → 写进去的值是 "hsc"，本该是 "bad"。
+        #   不报错、不留痕，只有翻体检报告才能发现 —— 和当年那条
+        #   "把中文备注 resetprop 上去"是同一个病。
+        #
+        #   列数不对就**明确判非法并记日志**，不猜、不静默兼容。
+        #
+        #   歧义靠什么消解：**variant 字段的白名单**（只有 hsc/uni/all）。
+        #   这是唯一能区分两种同形输入的东西，比"哪一列非空"可靠得多：
+        #       core|key|hsc|bad|   → _f3=hsc 合法变体 → 接受，value=bad
+        #       core|key|value|note| → _f3=value 非变体 → 判非法
+        #   所以备注**允许为空**（删个备注不该让属性静默失效），
+        #   但 variant 写错必须硬失败。
+        #
+        #   残留边界（写清楚，不假装消解了）：4 列的 `core|key|all|备注`
+        #   在 5 列语义下就是 variant=all、value=备注 —— 无法区分，也不该区分。
+        #   本模块 format 是 5 列，按 5 列解释，行为一致可预测。
+        #   真要写 4 列会被读成"值=备注"，这是格式外用法，不是解析器的锅。
+        if [ -n "$_f6" ] || [ -z "$_f3" ] || [ -z "$_f4" ]; then
             _bad=$((_bad + 1)); continue
-        elif [ -n "$_f5" ]; then
-            _var="$_f3"; _val="$_f4"          # scope|key|variant|value|note
-        else
-            _var="all";  _val="$_f3"          # scope|key|value|note
         fi
+        case "$_f3" in
+            hsc|uni|all) ;;
+            *) _bad=$((_bad + 1)); continue ;;
+        esac
+        _var="$_f3"; _val="$_f4"          # scope|key|variant|value|note(可空)
 
         [ -n "$_f2" ] || { _bad=$((_bad + 1)); continue; }
         [ -n "$_val" ] || { _bad=$((_bad + 1)); continue; }

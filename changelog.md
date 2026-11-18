@@ -2,79 +2,178 @@
 
 ## v2.1.5
 
-**新增 meta-bindmount 元模块** —— 给没有 overlayfs 的设备一个真正能用的挂载实现。
+**第二次独立审计 + 八处修复。** 上一版（v2.1.4）修了一批，这次又审出一批真 bug，
+其中两个是"用户实际会碰到"级别，还有一个是测试假绿。
 
-### 为什么做这个
+> ⚠ **不要安装 `meta-bindmount`。** 上一版规划的那个元模块方案已彻底放弃 ——
+> 它把 `/system` 的几个大目录整篇镜像进 tmpfs，在 3 GB 内存的表上拷不完，
+> `post-fs-data` 阶段超时，zygote 起不来，**卡第一屏**。真机验证过，已从 Release 撤下。
+> 四类根管理器的真实挂载机制见 v2.1.4 那段里的对照表。
 
-之前的判断是错的：我以为元模块是 KernelSU 独有，且以为 APatch/FolkPatch 挂载内置。
-实际查官方文档后确认：
+---
 
-| 根管理器 | 挂载机制 |
+### 严重（会真出问题）
+
+#### ① 卸载永远不还原 `/system` —— 装了卸不掉
+
+`uninstall.sh` 的门禁判的是 `$MODDIR/.sysbak/manifest`，
+而 `lib/sysinject.sh` 实际的备份目录是 `/data/adb/sl8541e-sysbak`
+（v2.1.4 把它移出模块目录，因为模块更新会整目录替换、备份会跟着消失）。
+
+**两个路径对不上 ⇒ 那段还原代码从来没执行过。**
+直写进 `/system` 的 5 个文件（Wear OS jar、V4A 三件套、hosts）卸载后原样留在系统分区，
+正是 sysinject 头部注释里写"这条路唯一比挂载危险的地方"要防的事。
+
+修法：不再硬编码第二份路径，向 `lib/sysinject.sh` 问 `SYSINJ_BAK`（单一事实来源）。
+另外加一条：**只在"失败 0 个"时才删备份** —— 还原失败还把备份删了，
+原厂文件就真找不回来了。
+
+#### ② 内置更新器下载 URL 拼错，实测 404
+
+```sh
+ZIPNAME="SL8541E_Config_Fix_${REMOTE}.zip"   # ← 四个包没一个叫这个名
+```
+
+实测：
+
+| 地址 | 结果 |
 |---|---|
-| Magisk | 内置 Magic Mount |
-| **APatch（新版）** | **移除内置挂载，必须装元模块** |
-| **FolkPatch** | 三种：内置 Magic Mount / 元模块 / **默认不挂载** |
-| KernelSU 系 | 元模块 |
+| `.../SL8541E_Config_Fix_v2.1.4.zip` | HTTP 404 |
+| `.../SL8541E_Config_Fix_v2.1.4_HSC_Audio.zip` | HTTP 200 |
 
-而市面上所有元模块（meta-overlayfs / meta-rs / meta-hybrid）**全部依赖 overlayfs**。
-本机内核 4.4.83 没编这个文件系统（`mount -t overlay` → `No such device`），
-所以它们装了也无效 —— 与 WebView 无关，是内核缺文件系统。
+也就是说 `check` 能报"有新版本"（走 302 拿 tag，那条是对的），
+一点安装就死在 `download_failed` —— **这条路从来没通过**。
 
-### meta-bindmount 做了什么
+修法：按「机型 × 音效」两个已存在的事实推文件名 ——
+机型取 `lib/variant`（hsc/uni），音效看包内有没有 V4A 三件套。
+推不出来就不猜，明确告诉用户去管理器更新（四个 `update-*.json` 通道都是好的）。
+四个推导结果已逐个和真实资产名比对过。
 
-用 **bind mount**（内核基础能力）实现元模块，不依赖 overlayfs：
+#### ③ 通用包的 `system.prop` 没裁剪
+
+通用包 `module.prop` 写着「不做虚标/云控/指纹人脸等原厂定制处理」，
+但 `system.prop` 是从源码原样拷过去的 —— `ro.hsc.*` / 虚标 / 指纹人脸
+**全都还在，开机照样注入**。`prop.list` 有 variant 列做过滤，`system.prop` 之前没有任何过滤。
+
+修法：构建时按 `prop.list` 的 variant 列裁剪，通用包只保留 `variant=all` 的键
+（实测剔除 24 项，保留 21 项）。名单不另抄一份，避免漂移。
+
+---
+
+### 中等（当前不触发，但埋着）
+
+#### ④ 通用包卸载会去删 HSC 专属属性
+
+`uninstall.sh` 的兜底硬编码清单是**无条件追加**的，不按 variant 过滤。
+通用包从没写过 `persist.sys.5g` / `persist.support.fingerprint` 这些，
+卸载却去 `resetprop --delete` —— 那台机器本来就有的话会被误删。
+
+修法：兜底清单拆成 `FALLBACK_ALL` 和 `FALLBACK_HSC` 两份，后者只在 hsc 包生效。
+
+#### ⑤ `prop.list` 的 4/5 列判定有歧义
+
+4 列和"5 列但备注留空"在 `IFS` 读完以后**完全同形**，旧代码把后者
+读成 `value=variant`：
 
 ```
-建镜像目录（tmpfs）→ 复制系统原目录 → 叠加模块文件
-→ 修属主/权限/SELinux → mount -o bind,dev=KSU 镜像 → 系统目录
+core|test.五列空备注|hsc|bad|   →  旧代码写进去的值是 "hsc"，本该是 "bad"
 ```
 
-关键点：
-- **绑整个目录**，所以能"新增"系统原本没有的文件（bind 只能覆盖已存在路径）
-- 挂载源设为 **`dev=KSU`**（KSU 官方要求，否则卸载不干净）；老内核自动降级
-- 有大小上限（默认 256MB），防止复制大目录拖死开机
-- 验证比对 **inode**，不只看 mount 返回值
-- 卸载**先 umount 再删镜像**，否则挂载点变空目录
+不报错、不留痕，只有翻体检报告才发现 —— 和当年"把中文备注当属性值"同一个病。
 
-### 两处时序陷阱（已修）
+修法：删掉 4 列兼容（它从来没被真正用到过，正是歧义的唯一来源），
+改成严格 5 列 + **variant 白名单**（hsc/uni/all）消解歧义。
+备注允许为空（删个备注不该让属性静默失效），variant 写错必须硬失败。
 
-1. **`metamount.sh` 在 `post-fs-data.sh` 之后运行**（官方顺序 ④→⑥）。
-   主模块的 `sysinject` 在 ④ 直写 `/system`，紧接着 ⑥ 又被 bind 覆盖 ——
-   成果被盖住，备份还变错。现在主模块检测到 `/data/adb/metamodule` 就**主动让位**。
+#### ⑥ `action.sh` 的 `anim_state` 八进制陷阱
 
-2. **`mount_proof` 的证据 1 粒度太粗**：原来只 grep 模块 id 出现在 `/proc/mounts`
-   里就判"已挂载"，装上元模块后挂载源路径天然带 id，导致"挂一个目录 = 全部已挂"。
-   改成按**路径前缀**精确匹配。
+```sh
+_a=$(echo "$_cur" | sed 's/\.//')   # 0.8 → 080
+_d=$((_a - _b))                      # bash: 080: value too great for base
+```
 
-### 备份冗余问题（用户提出）
+`$(())` 把前导 0 当八进制。用户手动把动画调成 0.8/0.9/0.1，
+体检报告走到「窗口 0.75」那行就**整个脚本崩掉**，后面全看不到。
 
-- **重启不会产生冗余**：`si_backup` 幂等，manifest 已有记录就直接返回；
-  文件就位后 `si_pending` 为空，连备份函数都不进。
-- **但跨版本升级会还原错**（已修）：备份原本放在 `$MODDIR/.sysbak`，
-  模块更新整目录替换时会一起丢失；而那时系统里已是"上一版模块写的"，
-  再次备份会把自家产物当原厂。
+修法：先剥前导零再算。
 
-修法：
-- 备份移到 `/data/adb/sl8541e-sysbak`（独立于模块目录，更新不动它）
-- 增加 `written.sha256` 指纹，记录我们写过的每个文件；
-  升级后靠它认出"系统里这份是我们早前写的"，记 `own` 而非 `exist`
-- `own` 在卸载时按"删掉"处理（究其本源是我们加的），并留一份 `.own-removed` 备用
+#### ⑦ `boot-completed.sh` 用了未初始化的 `$ROOT_NAME`
 
-### 验证
+日志打 `$ROOT_NAME` 时还没 `root_manager_detect`，永远是空串。
+下面 `$(metamodule_status)` 里虽然会 detect，但那是**子 shell**，变量回不来。
 
-| 测试 | 断言数 | 结果 |
+#### ⑧ 两个钩子文件的注释说错了
+
+`post-mount.sh` 和 `boot-completed.sh` 都写着"KernelSU 专有，
+Magisk / APatch / FolkPatch 都没有这个阶段"。
+
+查 FolkPatch 源码 `apd/src/event.rs`，三个阶段全都有：
+
+```rust
+run_stage("post-mount", ...);      // post-fs-data 末尾，magic_mount 之前
+run_stage("service", ...);
+run_stage("boot-completed", ...);
+```
+
+结论（"不能放必须执行的逻辑"）没错，但理由错了 ——
+以后有人照着注释判断会做错决定。
+
+---
+
+### 已移除：`vendor/overlay` 的 RRO
+
+那个 119 KB 的 `framework-res__auto_generated_rro.apk`（power_profile 修正）
+一直打进四个包，但 `si_pending()` 只 `find system/`，全模块也**没有任何一处验证过它**
+—— 也就是说它从来没生效过。留个"装着但不起作用"的东西比不留更糟。
+
+已从包里移除。真要恢复 vendor 支持得单独设计回滚路径（vendor 写坏掉 bootloader），
+不值当。`si_pending()` 上方已写明这一条，防止以后有人顺手把 `find` 起点改成 `.`。
+
+---
+
+### 测试：补上三条原本完全没测的路径
+
+| 新测试 | 断言 | 覆盖 |
 |---|---|---|
-| `test-metamount.sh` | 22 | 全过 |
+| `test-audit-v215.sh` | 25 | ①的还原门禁真跑一遍 · ②的四种包名推导逐个比对 · ⑨的 vendor 一致性 · ⑤⑥⑦ |
+
+**为什么之前 61 条断言全绿却没抓到这些**：那些断言测的是"函数在不在、
+逻辑长什么样"，没测"这条路径真跑起来会怎样"。和上次 `diag-mount.sh`
+拿 7 个小文件验证"镜像可行"是**同一类错误 —— 样本不能代表总体 / 引用不能代表行为**。
+
+`preflight.sh` 那条断言也改了。原来是：
+
+```sh
+grep -q 'si_restore_all' uninstall.sh && say_ok "卸载时会调用还原"
+```
+
+函数名在、门禁错，照样 ✅。现在改成**路径能不能对上**：从 uninstall.sh 抽出
+它问 `SYSINJ_BAK` 的那行，和 sysinject.sh 的默认值比；同时禁止再出现硬编码的
+`.sysbak` 门禁（只看代码行，跳过注释）。反向验证过：把门禁改回旧的，会打出两条 ❌。
+
+`diag-mount.sh` 的误导结论也改了 —— 原来拿 `/system/etc/permissions`
+（7 个几 KB 的小文件）验证 tmpfs 镜像，结论句写「**这条路可行**」。
+现在只报"机制通不通"，并额外列出 `/system/framework` 等真实目录的量级，
+明确写"小样本成功不代表大目录可行"。
+
+---
+
+### 全量回归
+
+| 测试 | 断言 | 结果 |
+|---|---|---|
 | `test-rootmanager.sh` | 16 | 全过 |
 | `test-sysinject.sh` | 14 | 全过 |
 | `test-backup-redundancy.sh` | 9 | 全过 |
+| `test-audit-v215.sh` | 25 | 全过 |
+| `test-proplist.sh` / `test-mount-proof.sh` / `test-animation1x.sh` 等 6 个 | — | 全过 |
 
-写测试时踩的坑（都记在注释里了）：
-- 沙箱路径重定向漏了 `"/$_rel"` 这种"引号内带斜杠"的形式 → 6 个用例假失败
-- 备份目录用 `rm -rf` 整个删，把 `written.sha256` 也删了 → 跨版本识别测不出来
-- 一度把 sed 重定向写成两条（一条漏 `g`、一条完全重复）—— 画蛇添足
+- **86 条断言全绿**（原 61 + 新 25）
+- 四个包分别跑 `test-audit-v215` 与 `preflight`：**全部 0 错误 0 警告**
+- 17 个脚本 `bash -n` 全过；22 个文本文件全 LF
 
-四个包 preflight **0 错误 0 警告**；17 个脚本 `bash -n` 全过；23 个文本文件全 LF。
+**动画段一字未动**：`1.0`×3 → `sleep 1` → `0.75/0.75/0.5`，
+一遍、不循环、不守护、不写 XML、无条件。已从四个包里逐字节核对。
 
 ## v2.1.4
 

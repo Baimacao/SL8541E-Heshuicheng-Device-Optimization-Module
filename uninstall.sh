@@ -39,8 +39,13 @@ if [ -f "$MODDIR/lib/prop.list" ]; then
     done < "$MODDIR/lib/prop.list"
 fi
 
-# prop.list 丢了也要能清干净 —— 这份是兜底硬编码
-PERSIST_PROPS="$PERSIST_PROPS
+# prop.list 丢了也要能清干净 —— 兜底硬编码。
+# ⚠ 必须按变体拆成两份（v2.1.5 修正）：
+#   之前是**无条件全量追加**，于是通用包卸载时也会去 resetprop --delete
+#   persist.sys.5g / persist.support.fingerprint 这些它从没写过的 hsc 专属属性。
+#   在有这些属性的机器上（哪怕是原厂自带的），等于把用户原有设置删了。
+#   判据：这个包写过没有 —— 没写过的东西，卸载时就没有资格动。
+FALLBACK_HSC="
 persist.sys.5g
 persist.sys.logo
 persist.sys.cpu
@@ -63,15 +68,21 @@ persist.sprd.fp.lockapp
 persist.sprd.fp.launchapp
 persist.sys.cam.faceid.version
 persist.sys.cam.refocus.enable
+heils.facelock"
+
+FALLBACK_ALL="
 persist.logd.logpersistd
 persist.logd.size
 persist.logd.size.crash
 persist.logd.size.system
 persist.logd.size.main
 persist.logd.size.radio
-persist.logd.size.events"
+persist.logd.size.events
+ro.config.zram.support"
 
-EXTRA_PROPS="heils.facelock ro.config.zram.support"
+PERSIST_PROPS="$PERSIST_PROPS $FALLBACK_ALL"
+[ "$VARIANT" = "hsc" ] && PERSIST_PROPS="$PERSIST_PROPS $FALLBACK_HSC"
+EXTRA_PROPS=""
 
 DELETED=0
 SKIPPED=0
@@ -158,14 +169,47 @@ done
 #   systemless 挂载重启就消失，但直写是**真的改了系统分区**：
 #   删模块、重启，文件照样留在 /system 里。不还原就等于装了卸不掉。
 #   备份与清单由 lib/sysinject.sh 在写入前建立。
-if [ -f "$MODDIR/lib/sysinject.sh" ] && [ -f "$MODDIR/.sysbak/manifest" ]; then
-    echo "── 还原 /system 下被直写替换的文件 ──" >> "$LOG"
-    (. "$MODDIR/lib/common.sh" 2>/dev/null
-     . "$MODDIR/lib/sysinject.sh" 2>/dev/null
-     sysinject_restore_out=$(si_restore_all 2>&1)
-     echo "$sysinject_restore_out" >> "$LOG") || echo "  ⚠ 还原过程出错" >> "$LOG"
-    echo "（若此处报 remount 失败：手动把 /system 里那 5 个文件删掉即可，不影响 Root）" >> "$LOG"
-    rm -rf "$MODDIR/.sysbak" 2>/dev/null
+#
+# ⚠ v2.1.5 修正：这里原来判的是 "$MODDIR/.sysbak/manifest"，而 sysinject.sh
+#   实际的备份目录是 /data/adb/sl8541e-sysbak（v2.1.4 移出去的原因见该文件注释）。
+#   两个路径对不上 ⇒ 这个 if 永远进不去 ⇒ **直写进 /system 的文件从来没被还原过**，
+#   卸载后 Wear OS 库 / V4A / hosts 就永久留在系统分区上，等于装了卸不掉。
+#   现在不再硬编码第二份路径：向 lib/sysinject.sh 问 SYSINJ_BAK，单一事实来源。
+#
+#   为什么在子 shell 里问：common.sh 会给 LOG 重新赋值
+#   （LOG="${FISH_LOG:-$MODDIR/fix.log}"），在本 shell 里 source 会覆盖掉上面
+#   那个 /sdcard/SL8541E_uninstall.log，后面所有 >> "$LOG" 就全写错地方了。
+SYSBAK_DIR=""
+if [ -f "$MODDIR/lib/sysinject.sh" ]; then
+    SYSBAK_DIR=$(
+        . "$MODDIR/lib/common.sh" >/dev/null 2>&1
+        . "$MODDIR/lib/sysinject.sh" >/dev/null 2>&1
+        printf '%s' "${SYSINJ_BAK:-}"
+    )
+fi
+
+if [ -n "$SYSBAK_DIR" ] && [ -f "$SYSBAK_DIR/manifest" ]; then
+    echo "── 还原 /system 下被直写替换的文件（备份在 $SYSBAK_DIR）──" >> "$LOG"
+    _restore_out=$(
+        . "$MODDIR/lib/common.sh" >/dev/null 2>&1
+        . "$MODDIR/lib/sysinject.sh" >/dev/null 2>&1
+        si_restore_all 2>&1
+    )
+    echo "$_restore_out" >> "$LOG"
+    # ⚠ 只有在"失败 0 个"时才删备份。还原失败还把备份删了，
+    #   原厂文件就真的找不回来了 —— 那才是不可逆的损失。
+    case "$_restore_out" in
+        *"失败 0 个"*)
+            rm -rf "$SYSBAK_DIR" 2>/dev/null
+            echo "  ✅ 备份已清理：$SYSBAK_DIR" >> "$LOG"
+            ;;
+        *)
+            echo "  ⚠ 还原未完全成功，**备份已保留**在 $SYSBAK_DIR" >> "$LOG"
+            echo "     （/system 里可能仍有本模块写入的文件；处理完再手动删这个目录）" >> "$LOG"
+            ;;
+    esac
+else
+    echo "── 无 /system 直写备份记录，跳过还原 ──" >> "$LOG"
 fi
 
 rm -f "$MODDIR/.run.lock" "$MODDIR/.run" 2>/dev/null

@@ -144,7 +144,18 @@ say "【5】tmpfs 目录镜像方案（不依赖 overlayfs）"
 mkdir -p "$TMP/mir" 2>/dev/null
 if mount -t tmpfs tmpfs "$TMP/mir" 2>/dev/null; then
     say "  ✅ tmpfs 挂载成功"
-    # 实测复制一个小目录（用 /system/etc/permissions 当样本）
+    # ⚠⚠ 下面这段拿 /system/etc/permissions 当样本，**它只能证明"机制通不通"，
+    #     绝对不能用来证明"这条路可行"**。v2.1.4 及之前结论句写的就是
+    #     「能把 tmpfs bind 到 /system/etc/permissions —— **这条路可行**」，
+    #     结果照着做了 meta-bindmount（v2.1.1 的伴生包），真机卡第一屏。
+    #
+    #     为什么：/system/etc/permissions 是 7 个几 KB 的小文件（总量几十 KB），
+    #     而真正要镜像的 /system/framework / priv-app / lib 是**几百 MB**。
+    #     样本尺度差三个数量级 —— 小目录 100% 成功，大目录在 3G 内存的表上
+    #     拷不完，post-fs-data 阶段超时，zygote 起不来。这是典型的
+    #     「样本不能代表总体」，验证了机制没验证规模。
+    #
+    #     所以这里如实说"机制可用，不代表大目录可用"，并且不打印可行性结论。
     if [ -d /system/etc/permissions ]; then
         _n=0; _fail=0
         for _f in /system/etc/permissions/*; do
@@ -152,13 +163,25 @@ if mount -t tmpfs tmpfs "$TMP/mir" 2>/dev/null; then
             _n=$((_n+1))
             cp -a "$_f" "$TMP/mir/" 2>/dev/null || _fail=$((_fail+1))
         done
-        say "  样本复制 /system/etc/permissions：$((_n-_fail))/$_n 成功"
+        say "  小样本复制 /system/etc/permissions：$((_n-_fail))/$_n 成功（仅几十 KB）"
         [ "$_fail" -gt 0 ] && say "  ⚠ 有 $_fail 个复制失败（可能是 hardlink/权限问题）"
     fi
+    # 顺便报真实目录的量级，让人自己看得见尺度差
+    for _d in /system/framework /system/priv-app /system/lib; do
+        [ -d "$_d" ] || continue
+        _k=$(du -sk "$_d" 2>/dev/null | cut -f1)
+        case "$_k" in ''|*[!0-9]*) _k=0 ;; esac
+        say "  真实目录量级：$_d ≈ $((_k / 1024)) MB"
+    done
     # 实测能否把 tmpfs bind 到 /system 下的真实目录（挂上再立刻撤）
     _o=$(mount --bind "$TMP/mir" /system/etc/permissions 2>&1)
     if [ -z "$_o" ]; then
-        say "  ✅ 能把 tmpfs bind 到 /system/etc/permissions —— **这条路可行**"
+        say "  ✅ bind 机制可用（tmpfs → /system/etc/permissions 成功，已撤）"
+        say "  ⚠ 这只证明**机制**通，不证明大目录可行 —— 见上面的量级对比。"
+        say "     镜像 /system/framework 这类几百 MB 的目录，在 3G 内存的表上"
+        say "     会让 post-fs-data 阶段超时（本来有 10 秒硬限制），结果是卡第一屏。"
+        say "     所以本模块**默认不做目录镜像**（SYSINJ_ALLOW_MIRROR=1 才开），"
+        say "     主路径是直写 /system。"
         umount /system/etc/permissions 2>/dev/null
     else
         say "  ❌ 无法 bind 到 /system：$_o"

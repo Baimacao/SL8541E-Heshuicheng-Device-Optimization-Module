@@ -92,7 +92,20 @@ anim_state() {
     if [ "$_s1" = "$_s2" ] && [ "$_s2" = "$_s3" ]; then
         _cur="$_s1"
         [ "$_cur" = "$_want" ] && { echo "已生效 ✓"; return; }
-        _a=$(echo "$_cur" | sed 's/\.//'); _b=$(echo "$_want" | sed 's/\.//')
+
+        # ⚠ 必须剥掉前导零再做整数减法（v2.1.5 修正）：
+        #   $(()) 把前导 0 当**八进制**。"0.8" 去掉小数点得 "080"，
+        #   而 080 在八进制里非法 → `value too great for base` → 整个报告崩掉。
+        #   实测：cur=0.75 正常，cur=0.8 直接报错退出，后面所有体检项都看不到。
+        #   用户手动把动画调成 0.8/0.9/0.1 就会中招 —— 模块本来就会改动画，
+        #   用户好奇去设置里拨一下很正常，不是罕见路径。
+        #   不用 10# 前缀是因为它在部分 shell 里不认；剥零最可移植。
+        _a=$(echo "$_cur"  | sed 's/\.//; s/^0*//'); [ -n "$_a" ] || _a=0
+        _b=$(echo "$_want" | sed 's/\.//; s/^0*//'); [ -n "$_b" ] || _b=0
+        case "$_a$_b" in
+            *[!0-9]*) echo "未生效 ✗ (当前 $_cur)"; return ;;
+        esac
+        # 补齐到同一位数，让 0.75(75) 和 0.5(5) 能在同一量纲上比
         while [ ${#_a} -lt ${#_b} ]; do _a="${_a}0"; done
         while [ ${#_b} -lt ${#_a} ]; do _b="${_b}0"; done
         _d=$((_a - _b)); [ "$_d" -lt 0 ] && _d=$((0 - _d))
@@ -172,6 +185,12 @@ echo "运行环境："
 echo "  根管理器：  $ROOT_NAME${ROOT_VER:+（$ROOT_VER）}"
 echo "  元模块：    $_MM_TXT"
 echo "  system/ 文件：$_SYS_TXT"
+# 备份占用：直写 /system 的代价是一份原厂备份留在 /data 下（不随模块删除）。
+# 之前这个函数定义了却没人调用 —— 用户看不到它占了多少空间，也没法判断
+# "我是不是该清理一下"。data 分区本来就不宽裕，这条信息必须可见。
+if command -v sysinject_backup_info >/dev/null 2>&1; then
+    echo "  /system 备份：$(sysinject_backup_info)"
+fi
 case "$_SYS_TXT" in
     *✗*)
         echo "  → 这台机器内核没有 overlayfs，元模块用不了。"
